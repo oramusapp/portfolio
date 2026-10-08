@@ -13,6 +13,7 @@ import { SignalForm } from './components/SignalForm';
 import { PriceChart, PRICE_DAYS } from './components/PriceChart';
 import { Footer } from './components/Footer';
 import { HoldingsPanel, type Holdings } from './components/HoldingsPanel';
+import { NetWorthPanel, type NetWorth } from './components/NetWorthPanel';
 
 const BENCH_COLORS: Record<string, string> = { BTC: '#d9a948', SOL: '#9a6cf0' };
 const EXTRA_COLORS = ['#4fc3d9', '#e46c9c', '#7fd26b', '#e8875a'];
@@ -36,6 +37,9 @@ export default function App() {
   // Current holdings per strategy (top-right button). The next signal starts from them; saving today's signal updates them.
   const [holdings, setHoldings] = usePersisted<Holdings | null>('holdings', null);
   const [holdingsOpen, setHoldingsOpen] = useState(false);
+  // Net worth across asset classes (bottom-right button), entered by hand.
+  const [netWorth, setNetWorth] = usePersisted<NetWorth>('networth', { currency: 'USD', items: [], updatedAt: 0 });
+  const [netWorthOpen, setNetWorthOpen] = useState(false);
 
   const sorted = useMemo(() => [...signals].sort((a, b) => a.date.localeCompare(b.date)), [signals]);
   const first = sorted[0]?.date;
@@ -133,6 +137,11 @@ export default function App() {
       <PriceChart sym={chartSym} setSym={setChartSym} book={book} today={today} />
 
       <Footer />
+
+      <button className="corner-btn" title="Net worth" aria-label="Net worth" onClick={() => setNetWorthOpen(true)}>
+        <img src="./networth-icon.png" alt="" />
+      </button>
+      {netWorthOpen && <NetWorthPanel initial={netWorth} onSave={(w) => { setNetWorth(w); setNetWorthOpen(false); }} onClose={() => setNetWorthOpen(false)} />}
 
       {holdingsOpen && <HoldingsPanel today={today} book={book} onNeed={setFormSyms}
         initial={holdings ?? { sdca: sim?.sdca ?? { cash: 0, btc: 0 }, rsps: sim?.rsps ?? { cash: 0, units: {} }, updatedAt: 0 }}
