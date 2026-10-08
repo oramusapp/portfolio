@@ -5,15 +5,25 @@ Lokalna aplikacja webowa do liczenia performance portfela krypto z dwiema **cał
 
 ## Uruchomienie
 
+Online: https://oramusapp.github.io/portfolio/ (GitHub Pages z gałęzi `main`).
+
+Lokalnie:
+
 ```bash
-cd portfolio
+cd portfolio/app
 npm install
 npm run dev        # otwórz http://localhost:5173
 npm test           # testy silnika (SDCA, rebalans RSPS, symulacja, benchmarki)
-npm run build      # statyczny build do dist/ (npm run preview, żeby go podejrzeć)
 ```
 
 Wymaga Node.js 20+ i dostępu do internetu (ceny).
+
+## Struktura i publikacja
+
+- `app/` — kod źródłowy (Vite + React + TypeScript).
+- `index.html`, `assets/` w katalogu głównym — zbudowana aplikacja, którą serwuje GitHub Pages.
+
+Po zmianach w kodzie: `cd app && npm run build`, a potem commit i push razem z katalogiem głównym (`index.html`, `assets/`).
 
 ## Stack i uzasadnienie
 
