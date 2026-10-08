@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { benchmark, simulate, type Signal } from './lib/engine';
+import { benchmark, rebalance, sdcaOrder, simulate, type Signal } from './lib/engine';
+import { priceOn } from './lib/prices';
 import { usePersisted } from './lib/storage';
 import { usePrices } from './lib/usePrices';
 import { CASH, TOKENS, emojiOf } from './lib/tokens';
@@ -11,6 +12,7 @@ import { SignalHistory } from './components/SignalHistory';
 import { SignalForm } from './components/SignalForm';
 import { PriceChart, PRICE_DAYS } from './components/PriceChart';
 import { Footer } from './components/Footer';
+import { HoldingsPanel, type Holdings } from './components/HoldingsPanel';
 
 const BENCH_COLORS: Record<string, string> = { BTC: '#d9a948', SOL: '#9a6cf0' };
 const EXTRA_COLORS = ['#4fc3d9', '#e46c9c', '#7fd26b', '#e8875a'];
@@ -31,12 +33,15 @@ export default function App() {
   const [chartSym, setChartSym] = usePersisted('priceChart', 'BTC');
   const [form, setForm] = useState<{ date: string; initial: Signal; existing: boolean } | null>(null);
   const [formSyms, setFormSyms] = useState<string[]>([]);
+  // Current holdings per strategy (top-right button). The next signal starts from them; saving today's signal updates them.
+  const [holdings, setHoldings] = usePersisted<Holdings | null>('holdings', null);
+  const [holdingsOpen, setHoldingsOpen] = useState(false);
 
   const sorted = useMemo(() => [...signals].sort((a, b) => a.date.localeCompare(b.date)), [signals]);
   const first = sorted[0]?.date;
   const from = addDays(first && first < addDays(today, -PRICE_DAYS) ? first : addDays(today, -PRICE_DAYS), -3);
   const needed = [
-    'BTC', 'SOL', chartSym, ...bench.extra, ...formSyms,
+    'BTC', 'SOL', chartSym, ...bench.extra, ...formSyms, ...Object.keys(holdings?.rsps.units ?? {}),
     ...sorted.flatMap((s) => [...Object.keys(s.rsps.alloc), ...Object.keys(s.rsps.units)])
   ];
   const { book, errors, loading } = usePrices(needed, from);
@@ -66,22 +71,37 @@ export default function App() {
     if (existing) { setForm({ date: today, initial: existing, existing: true }); return; }
     const prev = sorted.filter((s) => s.date < today).at(-1);
     // pre-fill with the carried-forward holdings of each strategy and the last allocation
-    const initial: Signal = prev && sim
-      ? { date: today, createdAt: 0, sdca: { pct: 0, cash: sim.sdca.cash, btc: sim.sdca.btc }, rsps: { alloc: { ...prev.rsps.alloc }, cash: sim.rsps.cash, units: { ...sim.rsps.units } } }
+    const base = holdings ?? (prev && sim ? { sdca: sim.sdca, rsps: sim.rsps } : null);
+    const initial: Signal = base
+      ? { date: today, createdAt: 0, sdca: { pct: 0, cash: base.sdca.cash, btc: base.sdca.btc }, rsps: { alloc: prev ? { ...prev.rsps.alloc } : { [CASH]: 100 }, cash: base.rsps.cash, units: { ...base.rsps.units } } }
       : emptySignal(today);
     setForm({ date: today, initial, existing: false });
   };
   const saveSignal = (s: Signal) => {
     setSignals((list) => [...list.filter((x) => x.date !== s.date), s]);
+    if (s.date === today) {   // holdings after executing today's orders
+      const p0 = (sym: string) => priceOn(book, sym, addDays(s.date, -1));
+      setHoldings({ sdca: sdcaOrder(s.sdca, p0('BTC')).after, rsps: rebalance(s.rsps, p0).after, updatedAt: Date.now() });
+    }
     setForm(null); setFormSyms([]);
   };
 
+  const holdingsValue = holdings
+    ? holdings.sdca.cash + holdings.sdca.btc * priceOn(book, 'BTC', today) + holdings.rsps.cash
+      + Object.entries(holdings.rsps.units).reduce((t, [k, u]) => t + u * priceOn(book, k, today), 0)
+    : 0;
   const extraOptions = TOKENS.map((t) => t.sym).filter((s) => s !== 'BTC' && s !== 'SOL' && !bench.extra.includes(s));
   const errList = Object.entries(errors);
 
   return (
     <div className="page">
-      <Kpis value={last?.value ?? 0} strategy={last?.totalGain ?? NaN} btc={btcBh} sdcaValue={last?.sdcaValue ?? 0} rspsValue={last?.rspsValue ?? 0}
+      <div className="topbar">
+        <button className="avatar-btn" title="Portfolio holdings" aria-label="Portfolio holdings" onClick={() => setHoldingsOpen(true)}>
+          <img src="./holdings-icon.png" alt="" />
+        </button>
+      </div>
+
+      <Kpis value={last?.value ?? holdingsValue} strategy={last?.totalGain ?? NaN} btc={btcBh} sdcaValue={last?.sdcaValue ?? 0} rspsValue={last?.rspsValue ?? 0}
         gains={last && last.invested > 0 ? last.value / last.invested - 1 : NaN} />
 
       <section className="card panel">
@@ -113,6 +133,10 @@ export default function App() {
       <PriceChart sym={chartSym} setSym={setChartSym} book={book} today={today} />
 
       <Footer />
+
+      {holdingsOpen && <HoldingsPanel today={today} book={book} onNeed={setFormSyms}
+        initial={holdings ?? { sdca: sim?.sdca ?? { cash: 0, btc: 0 }, rsps: sim?.rsps ?? { cash: 0, units: {} }, updatedAt: 0 }}
+        onSave={(h) => { setHoldings(h); setHoldingsOpen(false); setFormSyms([]); }} onClose={() => { setHoldingsOpen(false); setFormSyms([]); }} />}
 
       {form && <SignalForm date={form.date} initial={form.initial} book={book} editingExisting={form.existing}
         onNeed={setFormSyms} onSave={saveSignal} onClose={() => { setForm(null); setFormSyms([]); }} />}

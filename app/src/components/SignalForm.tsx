@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { allocError, rebalance, sdcaOrder, type Signal } from '../lib/engine';
 import { priceOn, type PriceBook } from '../lib/prices';
 import { ALL_ASSETS, CASH, TOKENS, emojiOf } from '../lib/tokens';
@@ -12,9 +12,9 @@ interface Props {
   onNeed: (syms: string[]) => void; onSave: (s: Signal) => void; onClose: () => void;
 }
 
-type Pair = { sym: string; v: string };
-const toPairs = (r: Record<string, number>) => Object.entries(r).map(([sym, v]) => ({ sym, v: String(+v.toFixed(8)) }));
-const n = (s: string) => (s.trim() === '' ? 0 : Number(s.replace(',', '.')));
+export type Pair = { sym: string; v: string };
+export const toPairs = (r: Record<string, number>) => Object.entries(r).map(([sym, v]) => ({ sym, v: String(+v.toFixed(8)) }));
+export const n = (s: string) => (s.trim() === '' ? 0 : Number(s.replace(',', '.')));
 
 function AssetSelect({ value, options, onChange }: { value: string; options: string[]; onChange: (s: string) => void }) {
   return (
@@ -24,7 +24,7 @@ function AssetSelect({ value, options, onChange }: { value: string; options: str
   );
 }
 
-function PairRows({ rows, setRows, options, unit, placeholder }: { rows: Pair[]; setRows: (r: Pair[]) => void; options: string[]; unit: string; placeholder: string }) {
+export function PairRows({ rows, setRows, options, unit, placeholder, extra }: { rows: Pair[]; setRows: (r: Pair[]) => void; options: string[]; unit: string; placeholder: string; extra?: (r: Pair) => ReactNode }) {
   const free = (keep: string) => options.filter((s) => s === keep || !rows.some((r) => r.sym === s));
   return (
     <div className="pairs">
@@ -33,6 +33,7 @@ function PairRows({ rows, setRows, options, unit, placeholder }: { rows: Pair[];
           <AssetSelect value={r.sym} options={free(r.sym)} onChange={(sym) => setRows(rows.map((x, j) => (j === i ? { ...x, sym } : x)))} />
           <input inputMode="decimal" value={r.v} placeholder={placeholder} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, v: e.target.value } : x)))} />
           <span className="unit">{unit}</span>
+          {extra?.(r)}
           <button className="icon" onClick={() => setRows(rows.filter((_, j) => j !== i))} title="Remove"><IcTrash width={16} /></button>
         </div>
       ))}

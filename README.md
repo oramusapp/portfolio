@@ -42,6 +42,9 @@ więc przetrwają odświeżenie i restart przeglądarki. Cała historia jest odt
   z przeniesioną alokacją. Kliknięcie wiersza pokazuje zlecenia i wynik każdej strategii osobno. `Edit` pozwala poprawić lub usunąć sygnał.
 - **Ceny**: dzienne świece UTC z Hyperliquid (perpy; kPEPE/kSHIB przeliczane na 1 token), a Binance spot tylko jako zapas, gdy Hyperliquid nie odpowiada.
   Świeca bieżącego dnia jest jeszcze otwarta, więc ostatni punkt to cena live (odświeżana co minutę).
+- **Portfolio holdings** (ikonka w prawym górnym rogu): bieżący stan każdej strategii — SDCA: ilość BTC + rezerwa gotówki,
+  RSPS: tokeny z listy z ilościami + rezerwa gotówki; wartości liczą się same z ceny live. Następny sygnał startuje z tego stanu,
+  a zapisanie dzisiejszego sygnału aktualizuje go o wykonane zlecenia. Wykres i KPI dalej liczone są z historii sygnałów.
 - **Price chart**: dzienne zamknięcia wybranego tokena z ostatnich 365 dni + cena bieżąca.
 
 ## Założenia
