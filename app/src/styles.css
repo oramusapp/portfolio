@@ -149,3 +149,12 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color:
 .page { padding-top: max(16px, env(safe-area-inset-top)); }
 .topbar { gap: 12px; align-items: center; }
 .check.opt { margin-right: auto; font-size: 13px; color: var(--dim); align-self: center; }
+
+/* no text selection or zoom gestures (inputs stay editable/selectable) */
+html { touch-action: pan-x pan-y; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+button, label, select, a, svg { touch-action: manipulation; }
+input, textarea { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+img { -webkit-user-drag: none; user-select: none; }
+/* iOS zooms into fields smaller than 16px on focus */
+@media (pointer: coarse) { input, select, textarea { font-size: 16px; } }
