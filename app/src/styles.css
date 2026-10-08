@@ -143,3 +143,7 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color:
 .nw-legend span { display: inline-flex; align-items: center; gap: 6px; } .nw-legend i { width: 8px; height: 8px; border-radius: 50%; }
 .footer { padding-bottom: 96px; }
 @media (max-width: 700px) { .nw-grid { grid-template-columns: 1fr; } .corner-btn { width: 58px; height: 58px; } }
+
+/* app update */
+.update-banner { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 20; display: flex; gap: 16px; align-items: center; background: #1d150c; border: 1px solid var(--gold); border-radius: 14px; padding: 12px 16px; box-shadow: 0 10px 30px #000c; width: min(440px, calc(100% - 120px)); justify-content: space-between; }
+.page { padding-top: max(16px, env(safe-area-inset-top)); }

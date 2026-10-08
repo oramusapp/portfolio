@@ -18,6 +18,17 @@ npm test           # testy silnika (SDCA, rebalans RSPS, symulacja, benchmarki)
 
 Wymaga Node.js 20+ i dostępu do internetu (ceny).
 
+## Instalacja na telefonie i aktualizacje
+
+Aplikacja jest PWA. Otwórz https://oramusapp.github.io/portfolio/ i wybierz **Dodaj do ekranu początkowego**
+(iPhone: Safari → Udostępnij; Android: Chrome → menu ⋮ → Zainstaluj aplikację).
+
+- Nowa wersja pobiera się sama (sprawdzanie przy otwarciu aplikacji i co godzinę) i pokazuje baner **New version available → Update**.
+  Aktualizacja podmienia tylko kod; sygnały, holdings i net worth zostają (`localStorage` pod tym samym adresem).
+- Zmiana formatu zapisanych danych = nowa migracja w `app/src/lib/storage.ts` (`MIGRATIONS`) i podbicie `SCHEMA_VERSION`; nie zmieniaj kluczy `pp.*`.
+- Dane giną tylko przy usunięciu aplikacji z telefonu albo wyczyszczeniu danych witryny w przeglądarce.
+  Na iPhonie aplikacja z ekranu początkowego ma osobne dane od Safari.
+
 ## Struktura i publikacja
 
 - `app/` — kod źródłowy (Vite + React + TypeScript).

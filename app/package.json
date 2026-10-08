@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -p . && node -e \"require('fs').rmSync('../assets',{recursive:true,force:true})\" && vite build",
+    "build": "tsc -p . && node scripts/clean.mjs && vite build",
     "preview": "vite preview",
     "test": "vitest run"
   },
@@ -19,6 +19,7 @@
     "@vitejs/plugin-react": "^6.1.2",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
+    "vite-plugin-pwa": "^2.0.0",
     "vitest": "^5.0.3"
   }
 }
