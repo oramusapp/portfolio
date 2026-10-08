@@ -16,7 +16,13 @@ export function usePrices(syms: string[], from: string) {
     setLoading((n) => n + 1);
     try {
       const s = await fetchDaily(sym, start);
-      setBook((b) => ({ ...b, [sym]: { ...b[sym], ...s } }));
+      // closed candles already loaded are kept; only the last days (the open candle and the one that just closed) are updated
+      const keepBefore = addDays(todayUtc(), -2);
+      setBook((b) => {
+        const merged = { ...b[sym] };
+        for (const [d, v] of Object.entries(s)) if (merged[d] === undefined || d >= keepBefore) merged[d] = v;
+        return { ...b, [sym]: merged };
+      });
       setErrors((e) => { const { [sym]: _, ...rest } = e; return rest; });
     } catch (err) {
       setErrors((e) => ({ ...e, [sym]: String((err as Error).message ?? err) }));

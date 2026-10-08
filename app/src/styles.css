@@ -147,3 +147,5 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color:
 /* app update */
 .update-banner { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 20; display: flex; gap: 16px; align-items: center; background: #1d150c; border: 1px solid var(--gold); border-radius: 14px; padding: 12px 16px; box-shadow: 0 10px 30px #000c; width: min(440px, calc(100% - 120px)); justify-content: space-between; }
 .page { padding-top: max(16px, env(safe-area-inset-top)); }
+.topbar { gap: 12px; align-items: center; }
+.check.opt { margin-right: auto; font-size: 13px; color: var(--dim); align-self: center; }

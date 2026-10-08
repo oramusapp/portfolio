@@ -29,6 +29,18 @@ Aplikacja jest PWA. Otwórz https://oramusapp.github.io/portfolio/ i wybierz **D
 - Dane giną tylko przy usunięciu aplikacji z telefonu albo wyczyszczeniu danych witryny w przeglądarce.
   Na iPhonie aplikacja z ekranu początkowego ma osobne dane od Safari.
 
+## Ochrona danych
+
+- Aplikacja nic nie nadpisuje ani nie usuwa sama: zapis następuje tylko po Twojej zmianie, a samo otwarcie aplikacji niczego nie zapisuje.
+- Kilka otwartych kart/okien synchronizuje się, więc starsza karta nie nadpisze nowszych danych.
+- Zastąpione i usunięte sygnały, poprzednie *Portfolio holdings* i *Net worth* trafiają do archiwum (do 300 wpisów) —
+  przycisk **Backup** u góry → *Archive* → **Restore**. Nieczytelne dane też są kopiowane do archiwum, zanim cokolwiek je zastąpi.
+- Zapis dzisiejszego sygnału aktualizuje *Portfolio holdings* tylko po zaznaczeniu tej opcji w formularzu.
+- Odświeżanie cen dopisuje nowe świece i aktualizuje tylko ostatnie dni; zamknięte świece już wczytane zostają bez zmian.
+- **Backup → Export backup** zapisuje wszystko do pliku `.json` (na telefonie przez menu Udostępnij), **Import backup…** wczytuje plik;
+  przed importem i przed migracją formatu bieżące dane trafiają do archiwum.
+- Gdy pamięć przeglądarki jest pełna lub zablokowana, aplikacja pokazuje komunikat *Could not save* zamiast milczeć.
+
 ## Struktura i publikacja
 
 - `app/` — kod źródłowy (Vite + React + TypeScript).

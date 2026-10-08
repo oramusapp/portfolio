@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { benchmark, rebalance, sdcaOrder, simulate, type Signal } from './lib/engine';
 import { priceOn } from './lib/prices';
-import { usePersisted } from './lib/storage';
+import { usePersisted, archive, SAVE_FAILED } from './lib/storage';
 import { usePrices } from './lib/usePrices';
 import { CASH, TOKENS, emojiOf } from './lib/tokens';
 import { addDays, msToReset, todayUtc } from './lib/utc';
@@ -14,6 +14,7 @@ import { PriceChart, PRICE_DAYS } from './components/PriceChart';
 import { Footer } from './components/Footer';
 import { HoldingsPanel, type Holdings } from './components/HoldingsPanel';
 import { NetWorthPanel, type NetWorth } from './components/NetWorthPanel';
+import { BackupPanel } from './components/BackupPanel';
 
 const BENCH_COLORS: Record<string, string> = { BTC: '#d9a948', SOL: '#9a6cf0' };
 const EXTRA_COLORS = ['#4fc3d9', '#e46c9c', '#7fd26b', '#e8875a'];
@@ -40,6 +41,9 @@ export default function App() {
   // Net worth across asset classes (bottom-right button), entered by hand.
   const [netWorth, setNetWorth] = usePersisted<NetWorth>('networth', { currency: 'USD', items: [], updatedAt: 0 });
   const [netWorthOpen, setNetWorthOpen] = useState(false);
+  const [backupOpen, setBackupOpen] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
+  useEffect(() => { const on = () => setSaveFailed(true); window.addEventListener(SAVE_FAILED, on); return () => window.removeEventListener(SAVE_FAILED, on); }, []);
 
   const sorted = useMemo(() => [...signals].sort((a, b) => a.date.localeCompare(b.date)), [signals]);
   const first = sorted[0]?.date;
@@ -81,9 +85,12 @@ export default function App() {
       : emptySignal(today);
     setForm({ date: today, initial, existing: false });
   };
-  const saveSignal = (s: Signal) => {
+  const saveSignal = (s: Signal, updateHoldings: boolean) => {
+    const old = signals.find((x) => x.date === s.date);
+    if (old) archive(`pp.signals#${s.date}`, 'replaced', `Signal ${s.date}`, old);
     setSignals((list) => [...list.filter((x) => x.date !== s.date), s]);
-    if (s.date === today) {   // holdings after executing today's orders
+    if (updateHoldings && s.date === today) {   // only when asked: holdings after executing today's orders
+      if (holdings) archive('pp.holdings', 'replaced', 'Portfolio holdings', holdings);
       const p0 = (sym: string) => priceOn(book, sym, addDays(s.date, -1));
       setHoldings({ sdca: sdcaOrder(s.sdca, p0('BTC')).after, rsps: rebalance(s.rsps, p0).after, updatedAt: Date.now() });
     }
@@ -100,6 +107,7 @@ export default function App() {
   return (
     <div className="page">
       <div className="topbar">
+        <button className="btn ghost small" onClick={() => setBackupOpen(true)}>Backup</button>
         <button className="avatar-btn" title="Portfolio holdings" aria-label="Portfolio holdings" onClick={() => setHoldingsOpen(true)}>
           <img src="./holdings-icon.png" alt="" />
         </button>
@@ -132,7 +140,11 @@ export default function App() {
 
       <SignalHistory rows={rows} today={today} hasToday={hasToday} resetIn={resetIn} onAdd={openToday}
         onEdit={(s) => setForm({ date: s.date, initial: s, existing: true })}
-        onDelete={(d) => setSignals((list) => list.filter((x) => x.date !== d))} />
+        onDelete={(d) => {
+          const old = signals.find((x) => x.date === d);
+          if (old) archive(`pp.signals#${d}`, 'deleted', `Signal ${d}`, old);
+          setSignals((list) => list.filter((x) => x.date !== d));
+        }} />
 
       <PriceChart sym={chartSym} setSym={setChartSym} book={book} today={today} />
 
@@ -141,13 +153,17 @@ export default function App() {
       <button className="corner-btn" title="Net worth" aria-label="Net worth" onClick={() => setNetWorthOpen(true)}>
         <img src="./networth-icon.png" alt="" />
       </button>
-      {netWorthOpen && <NetWorthPanel initial={netWorth} onSave={(w) => { setNetWorth(w); setNetWorthOpen(false); }} onClose={() => setNetWorthOpen(false)} />}
+      {netWorthOpen && <NetWorthPanel initial={netWorth} onSave={(w) => { if (netWorth.items.length) archive('pp.networth', 'replaced', 'Net worth', netWorth); setNetWorth(w); setNetWorthOpen(false); }} onClose={() => setNetWorthOpen(false)} />}
+
+      {backupOpen && <BackupPanel onClose={() => setBackupOpen(false)} />}
+      {saveFailed && <div className="update-banner"><div><b>Could not save</b><div className="dim small">The browser’s storage is full or blocked. Export a backup now.</div></div>
+        <button className="btn gold small" onClick={() => { setSaveFailed(false); setBackupOpen(true); }}>Backup</button></div>}
 
       {holdingsOpen && <HoldingsPanel today={today} book={book} onNeed={setFormSyms}
         initial={holdings ?? { sdca: sim?.sdca ?? { cash: 0, btc: 0 }, rsps: sim?.rsps ?? { cash: 0, units: {} }, updatedAt: 0 }}
-        onSave={(h) => { setHoldings(h); setHoldingsOpen(false); setFormSyms([]); }} onClose={() => { setHoldingsOpen(false); setFormSyms([]); }} />}
+        onSave={(h) => { if (holdings) archive('pp.holdings', 'replaced', 'Portfolio holdings', holdings); setHoldings(h); setHoldingsOpen(false); setFormSyms([]); }} onClose={() => { setHoldingsOpen(false); setFormSyms([]); }} />}
 
-      {form && <SignalForm date={form.date} initial={form.initial} book={book} editingExisting={form.existing}
+      {form && <SignalForm canUpdateHoldings={form.date === today} date={form.date} initial={form.initial} book={book} editingExisting={form.existing}
         onNeed={setFormSyms} onSave={saveSignal} onClose={() => { setForm(null); setFormSyms([]); }} />}
     </div>
   );
