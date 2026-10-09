@@ -29,6 +29,11 @@ Aplikacja jest PWA. Otwórz https://oramusapp.github.io/portfolio/ i wybierz **D
 - Dane giną tylko przy usunięciu aplikacji z telefonu albo wyczyszczeniu danych witryny w przeglądarce.
   Na iPhonie aplikacja z ekranu początkowego ma osobne dane od Safari.
 
+## Wygląd
+
+Tło z delikatnym „cyfrowym deszczem” (Matrix), okna jednolite. Przełącznik ☀/☾ u góry zmienia tryb dzienny / ciemny
+(zapamiętywany). Tryb ciemny ma czysto czarne tło pod ekrany OLED.
+
 ## Ochrona danych
 
 - Aplikacja nic nie nadpisuje ani nie usuwa sama: zapis następuje tylko po Twojej zmianie, a samo otwarcie aplikacji niczego nie zapisuje.

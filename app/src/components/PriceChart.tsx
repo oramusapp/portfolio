@@ -25,7 +25,7 @@ export function PriceChart({ sym, setSym, book, today }: { sym: string; setSym: 
         </div>
       </div>
       {dates.length > 1
-        ? <LineChart dates={dates} lines={[{ key: sym, label: `${emojiOf(sym)} ${sym} daily close (USD)`, color: '#00ff41', values, glow: true, area: true }]} fmtY={price} height={320} liveLast />
+        ? <LineChart dates={dates} lines={[{ key: sym, label: `${emojiOf(sym)} ${sym} daily close (USD)`, color: 'var(--accent)', values, glow: true, area: true }]} fmtY={price} height={320} liveLast />
         : <div className="empty">Loading {sym} prices…</div>}
     </section>
   );

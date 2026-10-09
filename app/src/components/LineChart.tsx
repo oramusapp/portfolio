@@ -85,8 +85,8 @@ export function LineChart({ dates, lines, height = 420, markers = [], fmtY, fmtT
       <div style={{ position: 'relative' }}>
         <svg width={w} height={height} onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
           <defs>
-            <filter id="glow" x="-10%" y="-30%" width="120%" height="160%"><feGaussianBlur stdDeviation="3.5" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
-            <linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#00ff41" stopOpacity="0.22" /><stop offset="1" stopColor="#00ff41" stopOpacity="0.01" /></linearGradient>
+            <filter id="glow" x="-10%" y="-30%" width="120%" height="160%"><feGaussianBlur stdDeviation="2" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+            <linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style={{ stopColor: 'var(--accent)', stopOpacity: 0.2 }} /><stop offset="1" style={{ stopColor: 'var(--accent)', stopOpacity: 0.01 }} /></linearGradient>
           </defs>
           {ticks.map((v) => (
             <g key={v}>
@@ -108,7 +108,7 @@ export function LineChart({ dates, lines, height = 420, markers = [], fmtY, fmtT
             return (
               <g key={l.key}>
                 {l.area && n > 1 && <path d={`${d} L${pts[n - 1][0]},${base} L${pts[0][0]},${base} Z`} fill="url(#area)" />}
-                <path d={d} fill="none" stroke={l.color} strokeWidth={l.glow ? 2.6 : 1.8} strokeDasharray={l.dashed ? '7 6' : undefined} filter={l.glow ? 'url(#glow)' : undefined} />
+                <path d={d} fill="none" style={{ stroke: l.color }} strokeWidth={l.glow ? 2.6 : 1.8} strokeDasharray={l.dashed ? '7 6' : undefined} filter={l.glow ? 'url(#glow)' : undefined} />
               </g>
             );
           })}
@@ -116,7 +116,7 @@ export function LineChart({ dates, lines, height = 420, markers = [], fmtY, fmtT
           {hover !== null && (
             <g>
               <line x1={x(hover)} x2={x(hover)} y1={PAD.t} y2={PAD.t + ih} className="cursor" />
-              {lines.map((l) => <circle key={l.key} cx={x(hover)} cy={y(l.values[hover])} r={3.5} fill={l.color} />)}
+              {lines.map((l) => <circle key={l.key} cx={x(hover)} cy={y(l.values[hover])} r={3.5} style={{ fill: l.color }} />)}
             </g>
           )}
         </svg>

@@ -19,8 +19,8 @@ export default defineConfig({
         short_name: 'Portfolio',
         description: 'SDCA + RSPS portfolio performance',
         display: 'standalone',
-        background_color: '#000400',
-        theme_color: '#000400',
+        background_color: '#000000',
+        theme_color: '#000000',
         start_url: './',
         scope: './',
         icons: [

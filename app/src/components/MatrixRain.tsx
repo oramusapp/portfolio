@@ -16,14 +16,24 @@ export function MatrixRain() {
       canvas.width = w * dpr; canvas.height = h * dpr; canvas.style.width = `${w}px`; canvas.style.height = `${h}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       drops = Array.from({ length: Math.ceil(w / FONT) }, () => Math.random() * -h / FONT);
-      ctx.fillStyle = '#000400'; ctx.fillRect(0, 0, w, h);
     };
+    // colours come from the theme (CSS variables), so day / dark mode switches without a reload
+    let fade = 'rgba(0, 0, 0, 0.09)', glyph = '#00ff41', lead = '#c8ffd4';
+    const readTheme = () => {
+      const cs = getComputedStyle(document.documentElement);
+      fade = cs.getPropertyValue('--rain-fade').trim() || fade;
+      glyph = cs.getPropertyValue('--rain').trim() || glyph;
+      lead = document.documentElement.dataset.theme === 'light' ? '#04461f' : '#c8ffd4';
+    };
+    readTheme();
+    const themeObs = new MutationObserver(readTheme);
+    themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     const step = () => {
-      ctx.fillStyle = 'rgba(0, 4, 0, 0.09)'; ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = fade; ctx.fillRect(0, 0, w, h);
       ctx.font = `${FONT}px 'Share Tech Mono', monospace`;
       drops.forEach((y, i) => {
         const ch = GLYPHS[(Math.random() * GLYPHS.length) | 0];
-        ctx.fillStyle = Math.random() > 0.975 ? '#c8ffd4' : '#00ff41';
+        ctx.fillStyle = Math.random() > 0.975 ? lead : glyph;
         ctx.fillText(ch, i * FONT, y * FONT);
         drops[i] = y * FONT > h && Math.random() > 0.975 ? 0 : y + 1;
       });
@@ -38,7 +48,7 @@ export function MatrixRain() {
     if (still) for (let i = 0; i < 60; i++) step(); else raf = requestAnimationFrame(loop);
     window.addEventListener('resize', resize);
     document.addEventListener('visibilitychange', onVis);
-    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); document.removeEventListener('visibilitychange', onVis); };
+    return () => { themeObs.disconnect(); cancelAnimationFrame(raf); window.removeEventListener('resize', resize); document.removeEventListener('visibilitychange', onVis); };
   }, []);
   return <canvas ref={ref} className="matrix-rain" aria-hidden="true" />;
 }

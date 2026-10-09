@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { UpdateBanner } from './components/UpdateBanner';
 import { migrate, requestPersistence } from './lib/storage';
+import { applyTheme, initialTheme } from './lib/theme';
 import '@fontsource/share-tech-mono';
 import './styles.css';
 import { MatrixRain } from './components/MatrixRain';
@@ -24,6 +25,7 @@ document.addEventListener('touchend', (e) => {
 document.addEventListener('dblclick', (e) => { if (!interactive(e.target)) e.preventDefault(); });
 
 migrate();
+applyTheme(initialTheme());
 requestPersistence();
 
 createRoot(document.getElementById('root')!).render(<StrictMode><MatrixRain /><App /><UpdateBanner /></StrictMode>);

@@ -16,7 +16,7 @@ export interface NetWorthItem { cat: Category; name: string; amount: number; }
 export interface NetWorth { currency: typeof CURRENCIES[number]; items: NetWorthItem[]; updatedAt: number; }
 
 type Row = { cat: Category; name: string; v: string };
-const COLORS: Record<Category, string> = { crypto: '#00ff41', stocks: '#33e1ff', metals: '#ffb000', cash: '#d4ff3c', bank: '#ff4fd8' };
+const COLORS: Record<Category, string> = { crypto: 'var(--accent)', stocks: 'var(--cyan)', metals: 'var(--amber)', cash: '#84cc16', bank: '#d946ef' };
 
 const money = (v: number, cur: string) =>
   Number.isFinite(v) ? `${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}` : '—';

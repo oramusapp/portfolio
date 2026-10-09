@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { benchmark, rebalance, sdcaOrder, simulate, type Signal } from './lib/engine';
 import { priceOn } from './lib/prices';
 import { usePersisted, archive, SAVE_FAILED } from './lib/storage';
+import { applyTheme } from './lib/theme';
+import { IcMoon, IcSun } from './components/icons';
 import { usePrices } from './lib/usePrices';
 import { CASH, TOKENS, emojiOf } from './lib/tokens';
 import { addDays, msToReset, todayUtc } from './lib/utc';
@@ -17,8 +19,8 @@ import { NetWorthPanel, type NetWorth } from './components/NetWorthPanel';
 import { BackupPanel } from './components/BackupPanel';
 import { PortfolioView } from './components/PortfolioView';
 
-const BENCH_COLORS: Record<string, string> = { BTC: '#ffb000', SOL: '#33e1ff' };
-const EXTRA_COLORS = ['#ff4fd8', '#d4ff3c', '#ff7a3c', '#8c9bff'];
+const BENCH_COLORS: Record<string, string> = { BTC: 'var(--amber)', SOL: 'var(--cyan)' };
+const EXTRA_COLORS = ['#d946ef', '#84cc16', '#f97316', '#6366f1'];
 
 function useNow(ms = 30_000) {
   const [now, setNow] = useState(Date.now());
@@ -43,6 +45,8 @@ export default function App() {
   const [netWorth, setNetWorth] = usePersisted<NetWorth>('networth', { currency: 'USD', items: [], updatedAt: 0 });
   const [netWorthOpen, setNetWorthOpen] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
+  const [theme, setTheme] = usePersisted<'dark' | 'light'>('theme', 'dark');
+  useEffect(() => { applyTheme(theme); }, [theme]);
   const [portfolioOpen, setPortfolioOpen] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
   useEffect(() => { const on = () => setSaveFailed(true); window.addEventListener(SAVE_FAILED, on); return () => window.removeEventListener(SAVE_FAILED, on); }, []);
@@ -64,7 +68,7 @@ export default function App() {
 
   const lines: Line[] = [];
   if (sim) {
-    lines.push({ key: 'pf', label: 'Portfolio', color: '#00ff41', values: [0, ...rows.map((r) => r.totalGain)], glow: true, area: true });
+    lines.push({ key: 'pf', label: 'Portfolio', color: 'var(--accent)', values: [0, ...rows.map((r) => r.totalGain)], glow: true, area: true });
     const add = (sym: string, color: string) => lines.push({ key: sym, label: `${sym} buy & hold`, color, dashed: true, values: [0, ...benchmark(book, sym, sim.start, rows.map((r) => r.date))] });
     if (bench.BTC) add('BTC', BENCH_COLORS.BTC);
     if (bench.SOL) add('SOL', BENCH_COLORS.SOL);
@@ -108,6 +112,8 @@ export default function App() {
   return (
     <div className="page">
       <div className="topbar">
+        <button className="theme-btn" title={theme === 'dark' ? 'Day mode' : 'Dark mode'} aria-label="Switch day / dark mode"
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <IcSun width={19} /> : <IcMoon width={19} />}</button>
         <button className="btn ghost small" onClick={() => setBackupOpen(true)}>Backup</button>
         <button className="avatar-btn" title="Portfolio holdings" aria-label="Portfolio holdings" onClick={() => setHoldingsOpen(true)}>
           <img src="./holdings-icon.png" alt="" />
