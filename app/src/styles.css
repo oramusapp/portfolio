@@ -165,3 +165,25 @@ img { -webkit-user-drag: none; user-select: none; }
 .act-line { font-size: 16px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 .cash-line { font-size: 14px; margin-top: 2px; }
 table.mini.orders td { font-size: 14px; padding: 7px 8px; }
+
+/* portfolio view */
+.kpi.clickable { cursor: pointer; } .kpi.clickable:hover { border-color: var(--gold); }
+.pv-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.pv-head h3 { margin: 0; }
+.pv-sum { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; } .pv-sum b { font-size: 18px; font-weight: 600; }
+table.mini.pv td, table.mini.pv th { font-size: 14px; padding: 8px 10px; }
+table.mini th.r, table.mini td.r { text-align: right; }
+.alloc-cell { position: relative; display: inline-flex; justify-content: flex-end; min-width: 84px; padding: 1px 4px; }
+.alloc-cell i { position: absolute; left: 0; top: 0; bottom: 0; background: #e2b44c33; border-radius: 4px; max-width: 100%; }
+.overlay { grid-template-columns: minmax(0, 1fr); justify-items: center; }
+.modal, .pane { min-width: 0; }
+@media (max-width: 640px) {
+  .modal { padding: 14px; }
+  table.mini.pv thead { display: none; }
+  table.mini.pv, table.mini.pv tbody { display: block; }
+  table.mini.pv tr { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px 10px; padding: 10px 0; border-bottom: 1px solid var(--line-2); }
+  table.mini.pv td { border: 0; padding: 0; text-align: left; white-space: normal; font-size: 14px; }
+  table.mini.pv td.pv-asset { grid-column: 1 / -1; font-size: 15px; }
+  table.mini.pv td[data-label]::before { content: attr(data-label); display: block; font-size: 11px; color: var(--dim); margin-bottom: 1px; }
+  .alloc-cell { justify-content: flex-start; min-width: 0; }
+}

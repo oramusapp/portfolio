@@ -15,6 +15,7 @@ import { Footer } from './components/Footer';
 import { HoldingsPanel, type Holdings } from './components/HoldingsPanel';
 import { NetWorthPanel, type NetWorth } from './components/NetWorthPanel';
 import { BackupPanel } from './components/BackupPanel';
+import { PortfolioView } from './components/PortfolioView';
 
 const BENCH_COLORS: Record<string, string> = { BTC: '#d9a948', SOL: '#9a6cf0' };
 const EXTRA_COLORS = ['#4fc3d9', '#e46c9c', '#7fd26b', '#e8875a'];
@@ -42,6 +43,7 @@ export default function App() {
   const [netWorth, setNetWorth] = usePersisted<NetWorth>('networth', { currency: 'USD', items: [], updatedAt: 0 });
   const [netWorthOpen, setNetWorthOpen] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
+  const [portfolioOpen, setPortfolioOpen] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
   useEffect(() => { const on = () => setSaveFailed(true); window.addEventListener(SAVE_FAILED, on); return () => window.removeEventListener(SAVE_FAILED, on); }, []);
 
@@ -97,10 +99,9 @@ export default function App() {
     setForm(null); setFormSyms([]);
   };
 
-  const holdingsValue = holdings
-    ? holdings.sdca.cash + holdings.sdca.btc * priceOn(book, 'BTC', today) + holdings.rsps.cash
-      + Object.entries(holdings.rsps.units).reduce((t, [k, u]) => t + u * priceOn(book, k, today), 0)
-    : 0;
+  // current holdings at live prices (the same numbers as the Portfolio view)
+  const hSdca = holdings ? holdings.sdca.cash + holdings.sdca.btc * priceOn(book, 'BTC', today) : 0;
+  const hRsps = holdings ? holdings.rsps.cash + Object.entries(holdings.rsps.units).reduce((t, [k, u]) => t + u * priceOn(book, k, today), 0) : 0;
   const extraOptions = TOKENS.map((t) => t.sym).filter((s) => s !== 'BTC' && s !== 'SOL' && !bench.extra.includes(s));
   const errList = Object.entries(errors);
 
@@ -113,7 +114,7 @@ export default function App() {
         </button>
       </div>
 
-      <Kpis value={last?.value ?? holdingsValue} strategy={last?.totalGain ?? NaN} btc={btcBh} sdcaValue={last?.sdcaValue ?? 0} rspsValue={last?.rspsValue ?? 0}
+      <Kpis value={holdings ? hSdca + hRsps : last?.value ?? 0} strategy={last?.totalGain ?? NaN} btc={btcBh} sdcaValue={holdings ? hSdca : last?.sdcaValue ?? 0} rspsValue={holdings ? hRsps : last?.rspsValue ?? 0} onOpenPortfolio={() => setPortfolioOpen(true)}
         gains={last && last.invested > 0 ? last.value / last.invested - 1 : NaN} />
 
       <section className="card panel">
@@ -155,6 +156,8 @@ export default function App() {
       </button>
       {netWorthOpen && <NetWorthPanel initial={netWorth} onSave={(w) => { if (netWorth.items.length) archive('pp.networth', 'replaced', 'Net worth', netWorth); setNetWorth(w); setNetWorthOpen(false); }} onClose={() => setNetWorthOpen(false)} />}
 
+      {portfolioOpen && <PortfolioView today={today} book={book} onClose={() => setPortfolioOpen(false)}
+        sdca={holdings?.sdca ?? sim?.sdca ?? { cash: 0, btc: 0 }} rsps={holdings?.rsps ?? sim?.rsps ?? { cash: 0, units: {} }} />}
       {backupOpen && <BackupPanel onClose={() => setBackupOpen(false)} />}
       {saveFailed && <div className="update-banner"><div><b>Could not save</b><div className="dim small">The browser’s storage is full or blocked. Export a backup now.</div></div>
         <button className="btn gold small" onClick={() => { setSaveFailed(false); setBackupOpen(true); }}>Backup</button></div>}
