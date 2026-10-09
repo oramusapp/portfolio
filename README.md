@@ -74,8 +74,11 @@ więc przetrwają odświeżenie i restart przeglądarki. Cała historia jest odt
 
 ## Założenia
 
-- Sygnał z dnia D jest realizowany po cenie zamknięcia świecy D-1 (00:00 UTC), bez opłat i poślizgu.
-- Sygnał SDCA w % to procent wartości części SDCA (cash + BTC); kupno jest ograniczone cashem SDCA, a sprzedaż posiadanym BTC.
+- Zlecenia w formularzu liczą się na cenach live z Hyperliquid (odświeżanie co 10 s). Zapis sygnału zapisuje te ceny jako ceny
+  realizacji (bez opłat i poślizgu) i z nich liczony jest performance. Starsze sygnały bez zapisanych cen używają zamknięcia D-1.
+- SDCA: **BUY x%** = x% rezerwy gotówki SDCA (1% ze $100 = BTC za $1), **SELL x%** = x% posiadanego BTC, po bieżącej cenie BTC.
+- RSPS: % alokacji dotyczy całej części RSPS (tokeny + gotówka RSPS), więc wolna gotówka jest rozdzielana według sygnału.
+  Zlecenia pokazują tylko kryptowaluty: ile sztuk sprzedać/kupić i za ile (najpierw sprzedaże), a gotówka jako stan przed → po.
 - W dniach `DUPLICATED` przenoszone są posiadane ilości tokenów (bez codziennego rebalansu), więc wagi dryfują z cenami.
 - Dzienny zwrot = wartość pozycji na zamknięciu D / wartość tych samych pozycji na zamknięciu D-1 (time-weighted). Różnica między wpisanym
   a przeniesionym stanem to wpłata/wypłata, a nie wynik.

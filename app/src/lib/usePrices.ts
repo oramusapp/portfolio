@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fetchDaily, type PriceBook } from './prices';
+import { fetchDaily, fetchLive, type PriceBook } from './prices';
 import { CASH } from './tokens';
 import { addDays, todayUtc } from './utc';
 
-const REFRESH_MS = 60_000;   // live close of the open daily candle
+const REFRESH_MS = 60_000;   // daily candles (the open one included)
+const LIVE_MS = 10_000;      // live prices for today
 
 /** Daily closes for `syms` from `from` onwards; the open candle of today is refreshed every minute. */
 export function usePrices(syms: string[], from: string) {
@@ -47,5 +48,27 @@ export function usePrices(syms: string[], from: string) {
     return () => clearInterval(id);
   }, [load]);
 
-  return { book, errors, loading: loading > 0 };
+  // live price = today's value for every token, so orders and holdings follow the market while the app is open
+  const [liveAt, setLiveAt] = useState<number | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const tick = async () => {
+      try {
+        const live = await fetchLive();
+        if (!alive) return;
+        const day = todayUtc();
+        setBook((b) => {
+          const next = { ...b };
+          for (const [sym, v] of Object.entries(live)) next[sym] = { ...next[sym], [day]: v };
+          return next;
+        });
+        setLiveAt(Date.now());
+      } catch { /* keep the last prices */ }
+    };
+    void tick();
+    const id = setInterval(tick, LIVE_MS);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+
+  return { book, errors, loading: loading > 0, liveAt };
 }

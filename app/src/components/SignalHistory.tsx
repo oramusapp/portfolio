@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react';
-import type { DayRow, RebalancePlan, SdcaOrder, Signal } from '../lib/engine';
-import { emojiOf } from '../lib/tokens';
+import type { DayRow, RebalancePlan, RebalanceRow, SdcaOrder, Signal } from '../lib/engine';
+import { CASH, emojiOf } from '../lib/tokens';
 import { num, pct, price, tone, usd } from '../lib/format';
 import { IcChevron, IcPen, IcPlus, IcTrash } from './icons';
 
@@ -10,42 +10,62 @@ export const allocText = (alloc: Record<string, number>) =>
 
 export const sdcaText = (p: number) => (p > 0 ? `BTC buy ${p}%` : p < 0 ? `BTC sell ${-p}%` : 'BTC hold');
 
-export function SdcaOrderView({ o }: { o: SdcaOrder }) {
+const btcAmt = (v: number) => (Number.isFinite(v) ? v.toLocaleString('en-US', { maximumFractionDigits: 8 }) : '—');
+const unitsAmt = (v: number) => (!Number.isFinite(v) ? '—' : v >= 1000 ? num(v, 2) : v >= 1 ? num(v, 4) : num(v, 8));
+
+export function SdcaOrderView({ o, live }: { o: SdcaOrder; live?: boolean }) {
+  const when = live ? 'live' : 'at save';
   return (
     <div className="order">
-      {o.side === 'hold' && <div>No SDCA trade today.</div>}
-      {o.side === 'buy' && <div><b className="pos">BUY {usd(o.usd, 2)}</b> of BTC ≈ {num(o.btc, 6)} BTC @ {price(o.price)} — from SDCA cash</div>}
-      {o.side === 'sell' && <div><b className="neg">SELL {num(o.btc, 6)} BTC</b> ≈ {usd(o.usd, 2)} @ {price(o.price)} — into SDCA cash</div>}
-      {o.capped && <div className="warn">Capped: the signal asks for {usd(o.wantedUsd, 2)}, but only {o.side === 'buy' ? 'the SDCA cash' : 'the BTC position'} is available.</div>}
-      <div className="dim">SDCA part {usd(o.value, 2)} → cash {usd(o.after.cash, 2)} · BTC {num(o.after.btc, 6)}</div>
+      {o.side === 'hold' && <div className="act-line"><span className="badge hold">HOLD</span>No SDCA trade.</div>}
+      {o.side === 'buy' && (
+        <>
+          <div className="act-line"><span className="badge buy">BUY</span><b>{btcAmt(o.btc)} BTC</b> for <b>{usd(o.usd, 2)}</b></div>
+          <div className="dim small">{+(o.pct * 100).toFixed(4)}% of the SDCA cash reserve {usd(o.after.cash + o.usd, 2)} · BTC {price(o.price)} ({when})</div>
+        </>
+      )}
+      {o.side === 'sell' && (
+        <>
+          <div className="act-line"><span className="badge sell">SELL</span><b>{btcAmt(o.btc)} BTC</b> for ≈ <b>{usd(o.usd, 2)}</b></div>
+          <div className="dim small">{+(o.pct * 100).toFixed(4)}% of the BTC held ({btcAmt(o.after.btc + o.btc)} BTC) · BTC {price(o.price)} ({when})</div>
+        </>
+      )}
+      <div className="dim small">After: cash {usd(o.after.cash, 2)} · BTC {btcAmt(o.after.btc)} · SDCA part {usd(o.value, 2)}</div>
     </div>
   );
 }
 
-export function RebalanceView({ p }: { p: RebalancePlan }) {
-  const rows = p.rows.filter((r) => Math.abs(r.deltaUsd) > 0.005 || r.tgtPct > 0 || r.curUsd > 0.005);
+const MIN_USD = 0.01;
+
+export function RebalanceView({ p, live }: { p: RebalancePlan; live?: boolean }) {
+  const cash = p.rows.find((r) => r.sym === CASH)!;
+  const tokens = p.rows.filter((r) => r.sym !== CASH);
+  const sells = tokens.filter((r) => r.deltaUsd < -MIN_USD).sort((a, b) => a.deltaUsd - b.deltaUsd);
+  const buys = tokens.filter((r) => r.deltaUsd > MIN_USD).sort((a, b) => b.deltaUsd - a.deltaUsd);
+  const holds = tokens.filter((r) => Math.abs(r.deltaUsd) <= MIN_USD && r.tgtPct > 0);
+  const row = (r: RebalanceRow, side: 'SELL' | 'BUY' | 'HOLD') => (
+    <tr key={r.sym}>
+      <td><span className={`badge ${side.toLowerCase()}`}>{side}</span></td>
+      <td>{emojiOf(r.sym)} <b>{side === 'HOLD' ? '' : unitsAmt(Math.abs(r.deltaUnits))} {r.sym}</b></td>
+      <td>{side === 'HOLD' ? '—' : `${side === 'SELL' ? '≈ ' : ''}${usd(Math.abs(r.deltaUsd), 2)}`}</td>
+      <td className="dim">{r.curPct.toFixed(1)}% → {r.tgtPct.toFixed(1)}%</td>
+      <td className="dim">{price(r.price)}</td>
+    </tr>
+  );
   return (
     <div className="order">
-      <table className="mini">
-        <thead><tr><th>Asset</th><th>Now</th><th>Target</th><th>Action</th><th>Δ %</th><th>Δ $</th><th>Δ units</th></tr></thead>
-        <tbody>
-          {rows.map((r) => {
-            const side = r.deltaUsd > 0.005 ? 'BUY' : r.deltaUsd < -0.005 ? 'SELL' : '—';
-            return (
-              <tr key={r.sym}>
-                <td>{emojiOf(r.sym)} {r.sym}</td>
-                <td>{r.curPct.toFixed(1)}%</td>
-                <td>{r.tgtPct.toFixed(1)}%</td>
-                <td className={side === 'BUY' ? 'pos' : side === 'SELL' ? 'neg' : 'dim'}>{side}</td>
-                <td>{side === '—' ? '—' : `${Math.abs(r.deltaPct).toFixed(2)}%`}</td>
-                <td>{side === '—' ? '—' : usd(Math.abs(r.deltaUsd), 2)}</td>
-                <td>{side === '—' || r.sym === 'CASH' ? '—' : num(Math.abs(r.deltaUnits), 6)}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      <div className="dim">RSPS part {usd(p.total, 2)}{p.missing.length ? ` · missing price: ${p.missing.join(', ')}` : ''}</div>
+      <div className="dim small">RSPS part {usd(p.total, 2)} = tokens {usd(p.total - cash.curUsd, 2)} + cash {usd(cash.curUsd, 2)} · prices {live ? 'live' : 'at save'}</div>
+      {sells.length + buys.length === 0
+        ? <div className="act-line"><span className="badge hold">HOLD</span>Nothing to trade — already on target.</div>
+        : (
+          <table className="mini orders">
+            <thead><tr><th /><th>Amount</th><th>For</th><th>Now → target</th><th>Price</th></tr></thead>
+            <tbody>{sells.map((r) => row(r, 'SELL'))}{buys.map((r) => row(r, 'BUY'))}{holds.map((r) => row(r, 'HOLD'))}</tbody>
+          </table>
+        )}
+      {sells.length > 0 && buys.length > 0 && <div className="dim small">Sell first, then buy with the proceeds.</div>}
+      <div className="cash-line">{emojiOf(CASH)} Cash: {usd(cash.curUsd, 2)} → <b>{usd(cash.tgtUsd, 2)}</b> <span className="dim">({cash.tgtPct.toFixed(1)}% of RSPS)</span></div>
+      {p.missing.length > 0 && <div className="warn small">Missing price: {p.missing.join(', ')}</div>}
     </div>
   );
 }

@@ -91,7 +91,7 @@ export default function App() {
     setSignals((list) => [...list.filter((x) => x.date !== s.date), s]);
     if (updateHoldings && s.date === today) {   // only when asked: holdings after executing today's orders
       if (holdings) archive('pp.holdings', 'replaced', 'Portfolio holdings', holdings);
-      const p0 = (sym: string) => priceOn(book, sym, addDays(s.date, -1));
+      const p0 = (sym: string) => s.px?.[sym] ?? priceOn(book, sym, addDays(s.date, -1));
       setHoldings({ sdca: sdcaOrder(s.sdca, p0('BTC')).after, rsps: rebalance(s.rsps, p0).after, updatedAt: Date.now() });
     }
     setForm(null); setFormSyms([]);
@@ -163,7 +163,7 @@ export default function App() {
         initial={holdings ?? { sdca: sim?.sdca ?? { cash: 0, btc: 0 }, rsps: sim?.rsps ?? { cash: 0, units: {} }, updatedAt: 0 }}
         onSave={(h) => { if (holdings) archive('pp.holdings', 'replaced', 'Portfolio holdings', holdings); setHoldings(h); setHoldingsOpen(false); setFormSyms([]); }} onClose={() => { setHoldingsOpen(false); setFormSyms([]); }} />}
 
-      {form && <SignalForm canUpdateHoldings={form.date === today} date={form.date} initial={form.initial} book={book} editingExisting={form.existing}
+      {form && <SignalForm today={today} canUpdateHoldings={form.date === today} date={form.date} initial={form.initial} book={book} editingExisting={form.existing}
         onNeed={setFormSyms} onSave={saveSignal} onClose={() => { setForm(null); setFormSyms([]); }} />}
     </div>
   );

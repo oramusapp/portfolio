@@ -2,8 +2,11 @@
 // holdings; they are only added together for the combined portfolio KPI/chart.
 //
 // Assumptions:
-// • A signal dated D is executed at the close of the last closed candle (D-1, 00:00 UTC), with no fees or slippage.
-// • SDCA signal % is a share of the SDCA part's value (cash + BTC): buys are capped at the SDCA cash, sells at the BTC held.
+// • Orders are worked out on live prices; saving a signal stores those prices (`px`) and the signal is executed at them,
+//   with no fees or slippage. Older signals without `px` use the close of D-1 (00:00 UTC).
+// • SDCA: BUY x% = x% of the SDCA cash reserve (1% of $100 = BTC for $1); SELL x% = x% of the BTC held. 0–100%, so it can
+//   never spend more cash or sell more BTC than the SDCA part has.
+// • RSPS: the target % applies to the whole RSPS part (tokens + RSPS cash), so spare RSPS cash is spread over the signal.
 // • On days without a new signal (DUPLICATED) the previous allocation is carried forward by keeping the units as they are
 //   (no daily re-rebalance), so weights drift with prices.
 // • Day return = value at close D / value at close D-1 of the holdings held during D (time-weighted), so differences between
@@ -14,7 +17,7 @@ import { addDays, daysBetween } from './utc';
 
 export interface SdcaInput { pct: number; cash: number; btc: number; }   // pct > 0 buy, < 0 sell
 export interface RspsInput { alloc: Record<string, number>; cash: number; units: Record<string, number>; }
-export interface Signal { date: string; createdAt: number; sdca: SdcaInput; rsps: RspsInput; }
+export interface Signal { date: string; createdAt: number; sdca: SdcaInput; rsps: RspsInput; px?: Record<string, number>; }
 export interface SdcaState { cash: number; btc: number; }
 export interface RspsState { cash: number; units: Record<string, number>; }
 
@@ -22,21 +25,21 @@ const EPS = 1e-9;
 
 // ---------- SDCA ----------
 export interface SdcaOrder {
-  price: number; value: number; side: 'buy' | 'sell' | 'hold';
-  wantedUsd: number; usd: number; btc: number; capped: boolean; after: SdcaState;
+  price: number; value: number; side: 'buy' | 'sell' | 'hold'; pct: number;
+  usd: number; btc: number; after: SdcaState;
 }
 export function sdcaOrder(inp: SdcaInput, price: number): SdcaOrder {
   const value = inp.cash + inp.btc * price;
-  const wantedUsd = Math.abs(inp.pct) / 100 * value;
+  const pct = Math.min(Math.abs(inp.pct), 100) / 100;
   if (inp.pct > 0) {
-    const usd = Math.min(wantedUsd, Math.max(inp.cash, 0));
-    return { price, value, side: 'buy', wantedUsd, usd, btc: usd / price, capped: wantedUsd > usd + EPS, after: { cash: inp.cash - usd, btc: inp.btc + usd / price } };
+    const usd = pct * Math.max(inp.cash, 0);
+    return { price, value, side: 'buy', pct, usd, btc: usd / price, after: { cash: inp.cash - usd, btc: inp.btc + usd / price } };
   }
   if (inp.pct < 0) {
-    const btc = Math.min(wantedUsd / price, Math.max(inp.btc, 0));
-    return { price, value, side: 'sell', wantedUsd, usd: btc * price, btc, capped: wantedUsd / price > btc + EPS, after: { cash: inp.cash + btc * price, btc: inp.btc - btc } };
+    const btc = pct * Math.max(inp.btc, 0);
+    return { price, value, side: 'sell', pct, usd: btc * price, btc, after: { cash: inp.cash + btc * price, btc: inp.btc - btc } };
   }
-  return { price, value, side: 'hold', wantedUsd: 0, usd: 0, btc: 0, capped: false, after: { cash: inp.cash, btc: inp.btc } };
+  return { price, value, side: 'hold', pct: 0, usd: 0, btc: 0, after: { cash: inp.cash, btc: inp.btc } };
 }
 
 // ---------- RSPS ----------
@@ -109,19 +112,26 @@ export function simulate(signals: Signal[], book: PriceBook, today: string): Sim
     const p0 = (s: string) => priceOn(book, s, prev), p1 = (s: string) => priceOn(book, s, d);
     const sig = byDate.get(d);
     let order: SdcaOrder | null = null, plan: RebalancePlan | null = null;
+    // growth factors of the day: [old holdings from close D-1 to execution] × [new holdings from execution to close D]
+    let gSd = 1, gRs = 1, gAll = 1, from = p0;
     if (sig) {
       active = sig;
+      const pe = (s: string) => sig.px?.[s] ?? p0(s);
+      if (rows.length) {
+        const a = sdcaValue(sd, p0('BTC')), b = sdcaValue(sd, pe('BTC')), c = rspsValue(rs, p0), e = rspsValue(rs, pe);
+        gSd = 1 + ret(b, a); gRs = 1 + ret(e, c); gAll = 1 + ret(b + e, a + c);
+      }
       // what you typed in vs what was carried forward = a deposit (+) or withdrawal (−)
-      const typed = sdcaValue(sig.sdca, p0('BTC')) + rspsValue({ cash: sig.rsps.cash, units: sig.rsps.units }, p0);
-      const carried = rows.length ? sdcaValue(sd, p0('BTC')) + rspsValue(rs, p0) : 0;
+      const typed = sdcaValue(sig.sdca, pe('BTC')) + rspsValue({ cash: sig.rsps.cash, units: sig.rsps.units }, pe);
+      const carried = rows.length ? sdcaValue(sd, pe('BTC')) + rspsValue(rs, pe) : 0;
       if (Number.isFinite(typed - carried)) invested += typed - carried;
-      order = sdcaOrder(sig.sdca, p0('BTC'));
-      plan = rebalance(sig.rsps, p0);
-      sd = order.after; rs = plan.after;
+      order = sdcaOrder(sig.sdca, pe('BTC'));
+      plan = rebalance(sig.rsps, pe);
+      sd = order.after; rs = plan.after; from = pe;
     }
-    const s0 = sdcaValue(sd, p0('BTC')), s1 = sdcaValue(sd, p1('BTC'));
-    const r0 = rspsValue(rs, p0), r1 = rspsValue(rs, p1);
-    const rSdca = ret(s1, s0), rRsps = ret(r1, r0), r = ret(s1 + r1, s0 + r0);
+    const s0 = sdcaValue(sd, from('BTC')), s1 = sdcaValue(sd, p1('BTC'));
+    const r0 = rspsValue(rs, from), r1 = rspsValue(rs, p1);
+    const rSdca = gSd * (1 + ret(s1, s0)) - 1, rRsps = gRs * (1 + ret(r1, r0)) - 1, r = gAll * (1 + ret(s1 + r1, s0 + r0)) - 1;
     idx *= 1 + r; iSd *= 1 + rSdca; iRs *= 1 + rRsps;
     const held = ['BTC', ...Object.keys(rs.units)];
     rows.push({

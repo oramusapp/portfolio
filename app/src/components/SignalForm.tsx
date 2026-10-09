@@ -3,13 +3,13 @@ import { allocError, rebalance, sdcaOrder, type Signal } from '../lib/engine';
 import { priceOn, type PriceBook } from '../lib/prices';
 import { ALL_ASSETS, CASH, TOKENS, emojiOf } from '../lib/tokens';
 import { addDays } from '../lib/utc';
-import { num, price, usd } from '../lib/format';
+import { price, usd } from '../lib/format';
 import { RebalanceView, SdcaOrderView } from './SignalHistory';
 import { IcClose, IcPlus, IcTrash } from './icons';
 
 interface Props {
   date: string; initial: Signal; book: PriceBook; editingExisting: boolean;
-  onNeed: (syms: string[]) => void; onSave: (s: Signal, updateHoldings: boolean) => void; onClose: () => void; canUpdateHoldings: boolean;
+  onNeed: (syms: string[]) => void; onSave: (s: Signal, updateHoldings: boolean) => void; onClose: () => void; canUpdateHoldings: boolean; today: string;
 }
 
 export type Pair = { sym: string; v: string };
@@ -42,7 +42,7 @@ export function PairRows({ rows, setRows, options, unit, placeholder, extra }: {
   );
 }
 
-export function SignalForm({ date, initial, book, editingExisting, onNeed, onSave, onClose, canUpdateHoldings }: Props) {
+export function SignalForm({ date, initial, book, editingExisting, onNeed, onSave, onClose, canUpdateHoldings, today }: Props) {
   const [updHoldings, setUpdHoldings] = useState(false);
   const [side, setSide] = useState<'buy' | 'sell'>(initial.sdca.pct < 0 ? 'sell' : 'buy');
   const [sdcaPct, setSdcaPct] = useState(String(Math.abs(initial.sdca.pct)));
@@ -52,8 +52,10 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
   const [rspsCash, setRspsCash] = useState(String(+initial.rsps.cash.toFixed(2)));
   const [units, setUnits] = useState<Pair[]>(toPairs(initial.rsps.units));
 
+  // today's signal: live prices (stored on save as the execution prices); an older signal keeps the prices it was saved with
+  const live = date === today;
   const execDay = addDays(date, -1);
-  const px = (s: string) => priceOn(book, s, execDay);
+  const px = (s: string) => (live ? priceOn(book, s, today) : initial.px?.[s] ?? priceOn(book, s, execDay));
   const syms = [...alloc, ...units].map((r) => r.sym);
   useEffect(() => { onNeed(syms); }, [syms.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -73,12 +75,14 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
   if (!(sdcaInput.cash >= 0) || !(sdcaInput.btc >= 0)) errors.push('SDCA cash and BTC must be ≥ 0.');
   if (!(rspsInput.cash >= 0) || Object.values(unitsRec).some((v) => !(v >= 0))) errors.push('RSPS holdings must be ≥ 0.');
   const ae = allocError(allocRec); if (ae) errors.push(`RSPS: ${ae}`);
-  if (!Number.isFinite(btcPx)) errors.push(`No BTC close for ${execDay} yet.`);
-  if (plan.missing.length) errors.push(`No close for ${plan.missing.join(', ')} on ${execDay} yet (still loading or not listed).`);
+  if (!Number.isFinite(btcPx)) errors.push('No BTC price yet (still loading).');
+  if (plan.missing.length) errors.push(`No price for ${plan.missing.join(', ')} yet (still loading).`);
 
   const save = () => {
     if (errors.length) return;
-    onSave({ date, createdAt: Date.now(), sdca: sdcaInput, rsps: { alloc: Object.fromEntries(Object.entries(allocRec).filter(([, v]) => v > 0)), cash: rspsInput.cash, units: unitsRec } }, updHoldings);
+    const used = ['BTC', ...Object.keys(allocRec), ...Object.keys(unitsRec)].filter((k) => k !== CASH);
+    const snapshot = Object.fromEntries(used.map((k) => [k, px(k)]).filter(([, v]) => Number.isFinite(v as number)));
+    onSave({ date, createdAt: Date.now(), sdca: sdcaInput, rsps: { alloc: Object.fromEntries(Object.entries(allocRec).filter(([, v]) => v > 0)), cash: rspsInput.cash, units: unitsRec }, px: snapshot }, updHoldings);
   };
 
   return (
@@ -86,7 +90,7 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <div><h2>{editingExisting ? 'Edit signal' : 'New signal'} · {date}</h2>
-            <div className="dim small">Executed at the close of {execDay} (00:00 UTC). SDCA and RSPS are separate: each uses only its own cash and holdings.</div></div>
+            <div className="dim small">{live ? 'Amounts follow live prices; saving stores them as the execution prices.' : 'Uses the prices stored when this signal was saved.'} SDCA and RSPS are separate: each uses only its own cash and holdings.</div></div>
           <button className="icon" onClick={onClose}><IcClose /></button>
         </div>
 
@@ -97,12 +101,13 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
               <button className={side === 'buy' ? 'on pos' : ''} onClick={() => setSide('buy')}>Buy BTC</button>
               <button className={side === 'sell' ? 'on neg' : ''} onClick={() => setSide('sell')}>Sell BTC</button>
             </div>
-            <label>Signal (% of the SDCA part)<div className="field"><input inputMode="decimal" value={sdcaPct} onChange={(e) => setSdcaPct(e.target.value)} /><span className="unit">%</span></div></label>
+            <label>{side === 'buy' ? 'Signal: % of the SDCA cash reserve to spend on BTC' : 'Signal: % of the BTC held to sell'}<div className="field"><input inputMode="decimal" value={sdcaPct} onChange={(e) => setSdcaPct(e.target.value)} /><span className="unit">%</span></div></label>
             <div className="dim small">Current SDCA part:</div>
             <label>SDCA cash reserve<div className="field"><input inputMode="decimal" value={sdcaCash} onChange={(e) => setSdcaCash(e.target.value)} /><span className="unit">USD</span></div></label>
             <label>BTC held<div className="field"><input inputMode="decimal" value={sdcaBtc} onChange={(e) => setSdcaBtc(e.target.value)} /><span className="unit">BTC</span></div></label>
-            <div className="dim small">BTC close {execDay}: {price(btcPx)} · SDCA part {usd(order?.value ?? NaN, 2)}</div>
-            {order && <SdcaOrderView o={order} />}
+            <div className="dim small">BTC {live ? 'live' : 'at save'}: {price(btcPx)}</div>
+            <h4 style={{ marginTop: 8 }}>Order</h4>
+            {order && <SdcaOrderView o={order} live={live} />}
           </div>
 
           <div className="card pane">
@@ -112,10 +117,9 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
             <div className={Math.abs(sum - 100) <= 0.01 ? 'pos small' : 'warn small'}>Sum: {+sum.toFixed(2)}%</div>
             <div className="dim small" style={{ marginTop: 10 }}>Current RSPS part:</div>
             <label>{emojiOf(CASH)} RSPS cash<div className="field"><input inputMode="decimal" value={rspsCash} onChange={(e) => setRspsCash(e.target.value)} /><span className="unit">USD</span></div></label>
-            <PairRows rows={units} setRows={setUnits} options={TOKENS.map((t) => t.sym)} unit="units" placeholder="0" />
-            <div className="dim small">RSPS part value: {usd(plan.total, 2)}{units.length ? ` · ${units.map((u) => `${u.sym} ${num(n(u.v), 6)} @ ${price(px(u.sym))}`).join(', ')}` : ''}</div>
-            <h4 style={{ marginTop: 12 }}>Rebalance</h4>
-            <RebalanceView p={plan} />
+            <PairRows rows={units} setRows={setUnits} options={TOKENS.map((t) => t.sym)} unit="units" placeholder="0" extra={(u) => <span className="val">{usd(n(u.v) * px(u.sym), 2)}</span>} />
+            <h4 style={{ marginTop: 12 }}>Orders</h4>
+            <RebalanceView p={plan} live={live} />
           </div>
         </div>
 

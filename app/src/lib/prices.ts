@@ -50,3 +50,18 @@ export function priceOn(book: PriceBook, sym: string, day: string): number {
   for (let i = 0, d = day; i < 8; i++, d = addDays(d, -1)) if (s[d] !== undefined) return s[d];
   return NaN;
 }
+
+/** Live prices of all RSPS tokens (Hyperliquid mid prices) in one request; USD per 1 token. */
+export async function fetchLive(): Promise<Record<string, number>> {
+  const res = await fetch('https://api.hyperliquid.xyz/info', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'allMids' })
+  });
+  if (!res.ok) throw new Error(`Hyperliquid ${res.status}`);
+  const mids: Record<string, string> = await res.json();
+  const out: Record<string, number> = {};
+  for (const [sym, tk] of tokenBySym) {
+    const v = Number(mids[tk.hl]);
+    if (Number.isFinite(v) && v > 0) out[sym] = v / tk.scale;
+  }
+  return out;
+}
