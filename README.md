@@ -35,7 +35,7 @@ Aplikacja jest PWA. Otwórz https://oramusapp.github.io/portfolio/ i wybierz **D
 - Kilka otwartych kart/okien synchronizuje się, więc starsza karta nie nadpisze nowszych danych.
 - Zastąpione i usunięte sygnały, poprzednie *Portfolio holdings* i *Net worth* trafiają do archiwum (do 300 wpisów) —
   przycisk **Backup** u góry → *Archive* → **Restore**. Nieczytelne dane też są kopiowane do archiwum, zanim cokolwiek je zastąpi.
-- Zapis dzisiejszego sygnału aktualizuje *Portfolio holdings* tylko po zaznaczeniu tej opcji w formularzu.
+- Zapis dzisiejszego sygnału aktualizuje *Portfolio holdings* do stanu po zleceniach (opcja zaznaczona domyślnie; odznacz, jeśli zleceń nie wykonałeś). Poprzedni stan trafia do archiwum.
 - Odświeżanie cen dopisuje nowe świece i aktualizuje tylko ostatnie dni; zamknięte świece już wczytane zostają bez zmian.
 - **Backup → Export backup** zapisuje wszystko do pliku `.json` (na telefonie przez menu Udostępnij), **Import backup…** wczytuje plik;
   przed importem i przed migracją formatu bieżące dane trafiają do archiwum.

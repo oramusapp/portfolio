@@ -43,7 +43,7 @@ export function PairRows({ rows, setRows, options, unit, placeholder, extra }: {
 }
 
 export function SignalForm({ date, initial, book, editingExisting, onNeed, onSave, onClose, canUpdateHoldings, today }: Props) {
-  const [updHoldings, setUpdHoldings] = useState(false);
+  const [updHoldings, setUpdHoldings] = useState(true);   // on by default; untick if the orders were not executed
   const [side, setSide] = useState<'buy' | 'sell'>(initial.sdca.pct < 0 ? 'sell' : 'buy');
   const [sdcaPct, setSdcaPct] = useState(String(Math.abs(initial.sdca.pct)));
   const [sdcaCash, setSdcaCash] = useState(String(+initial.sdca.cash.toFixed(2)));
@@ -125,7 +125,7 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
 
         {errors.length > 0 && <ul className="errors">{errors.map((e) => <li key={e}>{e}</li>)}</ul>}
         <div className="modal-foot">
-          {canUpdateHoldings && <label className="check opt"><input type="checkbox" checked={updHoldings} onChange={(e) => setUpdHoldings(e.target.checked)} /><span />Also update Portfolio holdings to the state after these trades</label>}
+          {canUpdateHoldings && <label className="check opt"><input type="checkbox" checked={updHoldings} onChange={(e) => setUpdHoldings(e.target.checked)} /><span />Update Portfolio holdings to the state after these trades (untick if not executed)</label>}
           <button className="btn ghost" onClick={onClose}>Cancel</button>
           <button className="btn gold" disabled={errors.length > 0} onClick={save}>Save signal</button>
         </div>
