@@ -17,8 +17,8 @@ import { NetWorthPanel, type NetWorth } from './components/NetWorthPanel';
 import { BackupPanel } from './components/BackupPanel';
 import { PortfolioView } from './components/PortfolioView';
 
-const BENCH_COLORS: Record<string, string> = { BTC: '#d9a948', SOL: '#9a6cf0' };
-const EXTRA_COLORS = ['#4fc3d9', '#e46c9c', '#7fd26b', '#e8875a'];
+const BENCH_COLORS: Record<string, string> = { BTC: '#ffb000', SOL: '#33e1ff' };
+const EXTRA_COLORS = ['#ff4fd8', '#d4ff3c', '#ff7a3c', '#8c9bff'];
 
 function useNow(ms = 30_000) {
   const [now, setNow] = useState(Date.now());
@@ -64,7 +64,7 @@ export default function App() {
 
   const lines: Line[] = [];
   if (sim) {
-    lines.push({ key: 'pf', label: 'Portfolio', color: '#f4efe6', values: [0, ...rows.map((r) => r.totalGain)], glow: true, area: true });
+    lines.push({ key: 'pf', label: 'Portfolio', color: '#00ff41', values: [0, ...rows.map((r) => r.totalGain)], glow: true, area: true });
     const add = (sym: string, color: string) => lines.push({ key: sym, label: `${sym} buy & hold`, color, dashed: true, values: [0, ...benchmark(book, sym, sim.start, rows.map((r) => r.date))] });
     if (bench.BTC) add('BTC', BENCH_COLORS.BTC);
     if (bench.SOL) add('SOL', BENCH_COLORS.SOL);
@@ -121,7 +121,7 @@ export default function App() {
         <div className="panel-head">
           <h2>Portfolio performance (%)</h2>
           <div className="checks">
-            <label className="check gold"><input type="checkbox" checked={bench.BTC} onChange={(e) => setBench({ ...bench, BTC: e.target.checked })} /><span />BTC benchmark</label>
+            <label className="check amber"><input type="checkbox" checked={bench.BTC} onChange={(e) => setBench({ ...bench, BTC: e.target.checked })} /><span />BTC benchmark</label>
             <label className="check purple"><input type="checkbox" checked={bench.SOL} onChange={(e) => setBench({ ...bench, SOL: e.target.checked })} /><span />SOL benchmark</label>
             {bench.extra.map((s) => (
               <label className="check" key={s}><input type="checkbox" checked onChange={() => setBench({ ...bench, extra: bench.extra.filter((x) => x !== s) })} /><span />{s} benchmark</label>

@@ -86,7 +86,7 @@ export function LineChart({ dates, lines, height = 420, markers = [], fmtY, fmtT
         <svg width={w} height={height} onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
           <defs>
             <filter id="glow" x="-10%" y="-30%" width="120%" height="160%"><feGaussianBlur stdDeviation="3.5" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
-            <linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#fff" stopOpacity="0.22" /><stop offset="1" stopColor="#fff" stopOpacity="0.02" /></linearGradient>
+            <linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#00ff41" stopOpacity="0.22" /><stop offset="1" stopColor="#00ff41" stopOpacity="0.01" /></linearGradient>
           </defs>
           {ticks.map((v) => (
             <g key={v}>

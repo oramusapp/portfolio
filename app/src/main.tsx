@@ -3,7 +3,9 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { UpdateBanner } from './components/UpdateBanner';
 import { migrate, requestPersistence } from './lib/storage';
+import '@fontsource/share-tech-mono';
 import './styles.css';
+import { MatrixRain } from './components/MatrixRain';
 
 // No zooming: pinch (iOS gesture events, multi-touch, trackpad ctrl+wheel) and double-tap (CSS touch-action + guard below).
 // iOS ignores user-scalable=no, so the gestures are blocked here as well.
@@ -24,4 +26,4 @@ document.addEventListener('dblclick', (e) => { if (!interactive(e.target)) e.pre
 migrate();
 requestPersistence();
 
-createRoot(document.getElementById('root')!).render(<StrictMode><App /><UpdateBanner /></StrictMode>);
+createRoot(document.getElementById('root')!).render(<StrictMode><MatrixRain /><App /><UpdateBanner /></StrictMode>);
