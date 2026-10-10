@@ -58,7 +58,7 @@ export default function App() {
     'BTC', 'SOL', chartSym, ...bench.extra, ...formSyms, ...Object.keys(holdings?.rsps.units ?? {}),
     ...sorted.flatMap((s) => [...Object.keys(s.rsps.alloc), ...Object.keys(s.rsps.units)])
   ];
-  const { book, errors, loading } = usePrices(needed, from);
+  const { book, errors, loading, liveAt } = usePrices(needed, from);
 
   const sim = useMemo(() => simulate(sorted, book, today), [sorted, book, today]);
   const rows = sim?.rows ?? [];
@@ -91,11 +91,11 @@ export default function App() {
       : emptySignal(today);
     setForm({ date: today, initial, existing: false });
   };
-  const saveSignal = (s: Signal, updateHoldings: boolean) => {
+  const saveSignal = (s: Signal) => {
     const old = signals.find((x) => x.date === s.date);
     if (old) archive(`pp.signals#${s.date}`, 'replaced', `Signal ${s.date}`, old);
     setSignals((list) => [...list.filter((x) => x.date !== s.date), s]);
-    if (updateHoldings && s.date === today) {   // only when asked: holdings after executing today's orders
+    if (s.date === today) {   // today's orders are executed: holdings move to the post-trade state (old state archived)
       if (holdings) archive('pp.holdings', 'replaced', 'Portfolio holdings', holdings);
       const p0 = (sym: string) => s.px?.[sym] ?? priceOn(book, sym, addDays(s.date, -1));
       setHoldings({ sdca: sdcaOrder(s.sdca, p0('BTC')).after, rsps: rebalance(s.rsps, p0).after, updatedAt: Date.now() });
@@ -172,7 +172,7 @@ export default function App() {
         initial={holdings ?? { sdca: sim?.sdca ?? { cash: 0, btc: 0 }, rsps: sim?.rsps ?? { cash: 0, units: {} }, updatedAt: 0 }}
         onSave={(h) => { if (holdings) archive('pp.holdings', 'replaced', 'Portfolio holdings', holdings); setHoldings(h); setHoldingsOpen(false); setFormSyms([]); }} onClose={() => { setHoldingsOpen(false); setFormSyms([]); }} />}
 
-      {form && <SignalForm today={today} canUpdateHoldings={form.date === today} date={form.date} initial={form.initial} book={book} editingExisting={form.existing}
+      {form && <SignalForm today={today} liveAt={liveAt} date={form.date} initial={form.initial} book={book} editingExisting={form.existing}
         onNeed={setFormSyms} onSave={saveSignal} onClose={() => { setForm(null); setFormSyms([]); }} />}
     </div>
   );

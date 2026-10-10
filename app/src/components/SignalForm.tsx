@@ -9,8 +9,10 @@ import { IcClose, IcPlus, IcTrash } from './icons';
 
 interface Props {
   date: string; initial: Signal; book: PriceBook; editingExisting: boolean;
-  onNeed: (syms: string[]) => void; onSave: (s: Signal, updateHoldings: boolean) => void; onClose: () => void; canUpdateHoldings: boolean; today: string;
+  onNeed: (syms: string[]) => void; onSave: (s: Signal) => void; onClose: () => void; today: string; liveAt: number | null;
 }
+
+const fmtUnits = (v: number) => (v >= 1000 ? v.toLocaleString('en-US', { maximumFractionDigits: 2 }) : v.toLocaleString('en-US', { maximumFractionDigits: 8 }));
 
 export type Pair = { sym: string; v: string };
 export const toPairs = (r: Record<string, number>) => Object.entries(r).map(([sym, v]) => ({ sym, v: String(+v.toFixed(8)) }));
@@ -42,8 +44,9 @@ export function PairRows({ rows, setRows, options, unit, placeholder, extra }: {
   );
 }
 
-export function SignalForm({ date, initial, book, editingExisting, onNeed, onSave, onClose, canUpdateHoldings, today }: Props) {
-  const [updHoldings, setUpdHoldings] = useState(true);   // on by default; untick if the orders were not executed
+export function SignalForm({ date, initial, book, editingExisting, onNeed, onSave, onClose, today, liveAt }: Props) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, []);
   const [side, setSide] = useState<'buy' | 'sell'>(initial.sdca.pct < 0 ? 'sell' : 'buy');
   const [sdcaPct, setSdcaPct] = useState(String(Math.abs(initial.sdca.pct)));
   const [sdcaCash, setSdcaCash] = useState(String(+initial.sdca.cash.toFixed(2)));
@@ -82,7 +85,7 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
     if (errors.length) return;
     const used = ['BTC', ...Object.keys(allocRec), ...Object.keys(unitsRec)].filter((k) => k !== CASH);
     const snapshot = Object.fromEntries(used.map((k) => [k, px(k)]).filter(([, v]) => Number.isFinite(v as number)));
-    onSave({ date, createdAt: Date.now(), sdca: sdcaInput, rsps: { alloc: Object.fromEntries(Object.entries(allocRec).filter(([, v]) => v > 0)), cash: rspsInput.cash, units: unitsRec }, px: snapshot }, updHoldings);
+    onSave({ date, createdAt: Date.now(), sdca: sdcaInput, rsps: { alloc: Object.fromEntries(Object.entries(allocRec).filter(([, v]) => v > 0)), cash: rspsInput.cash, units: unitsRec }, px: snapshot });
   };
 
   return (
@@ -90,7 +93,10 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <div><h2>{editingExisting ? 'Edit signal' : 'New signal'} · {date}</h2>
-            <div className="dim small">{live ? 'Amounts follow live prices; saving stores them as the execution prices.' : 'Uses the prices stored when this signal was saved.'} SDCA and RSPS are separate: each uses only its own cash and holdings.</div></div>
+            <div className="dim small">{live ? 'Amounts follow live prices; saving stores them as the execution prices and updates Portfolio holdings.' : 'Uses the prices stored when this signal was saved.'} SDCA and RSPS are separate: each uses only its own cash and holdings.</div>
+            {live && <div className={`live-dot ${liveAt && now - liveAt < 45_000 ? '' : 'stale'}`}>
+              {liveAt ? (now - liveAt < 45_000 ? `Live prices · updated ${Math.max(0, Math.round((now - liveAt) / 1000))} s ago` : `Prices not updated for ${Math.round((now - liveAt) / 1000)} s — check the connection`) : 'Loading live prices…'}
+            </div>}</div>
           <button className="icon" onClick={onClose}><IcClose /></button>
         </div>
 
@@ -125,7 +131,11 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
 
         {errors.length > 0 && <ul className="errors">{errors.map((e) => <li key={e}>{e}</li>)}</ul>}
         <div className="modal-foot">
-          {canUpdateHoldings && <label className="check opt"><input type="checkbox" checked={updHoldings} onChange={(e) => setUpdHoldings(e.target.checked)} /><span />Update Portfolio holdings to the state after these trades (untick if not executed)</label>}
+          <div className="after-note">
+            {live && order && !plan.missing.length
+              ? <>After saving, Portfolio holdings become — <b>SDCA:</b> {fmtUnits(order.after.btc)} BTC + {usd(order.after.cash, 2)} · <b>RSPS:</b> {Object.entries(plan.after.units).map(([k, u]) => `${fmtUnits(u)} ${k}`).join(', ') || 'no tokens'} + {usd(plan.after.cash, 2)}</>
+              : !live ? 'Editing an older signal does not change Portfolio holdings.' : null}
+          </div>
           <button className="btn ghost" onClick={onClose}>Cancel</button>
           <button className="btn gold" disabled={errors.length > 0} onClick={save}>Save signal</button>
         </div>

@@ -67,7 +67,15 @@ export function usePrices(syms: string[], from: string) {
     };
     void tick();
     const id = setInterval(tick, LIVE_MS);
-    return () => { alive = false; clearInterval(id); };
+    // phones pause timers in the background: refresh at once when the app comes back or the network returns
+    const wake = () => { if (document.visibilityState === 'visible') void tick(); };
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('online', wake);
+    window.addEventListener('focus', wake);
+    return () => {
+      alive = false; clearInterval(id);
+      document.removeEventListener('visibilitychange', wake); window.removeEventListener('online', wake); window.removeEventListener('focus', wake);
+    };
   }, []);
 
   return { book, errors, loading: loading > 0, liveAt };

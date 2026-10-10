@@ -40,7 +40,7 @@ Tło z delikatnym „cyfrowym deszczem” (Matrix), okna jednolite. Przełączni
 - Kilka otwartych kart/okien synchronizuje się, więc starsza karta nie nadpisze nowszych danych.
 - Zastąpione i usunięte sygnały, poprzednie *Portfolio holdings* i *Net worth* trafiają do archiwum (do 300 wpisów) —
   przycisk **Backup** u góry → *Archive* → **Restore**. Nieczytelne dane też są kopiowane do archiwum, zanim cokolwiek je zastąpi.
-- Zapis dzisiejszego sygnału aktualizuje *Portfolio holdings* do stanu po zleceniach (opcja zaznaczona domyślnie; odznacz, jeśli zleceń nie wykonałeś). Poprzedni stan trafia do archiwum.
+- Zapis dzisiejszego sygnału zawsze aktualizuje *Portfolio holdings* do stanu po zleceniach (formularz pokazuje ten stan przed zapisem), więc kolejny sygnał startuje z bieżących ilości coinów i gotówki. Poprzedni stan trafia do archiwum. Edycja starszego sygnału nie zmienia holdings.
 - Odświeżanie cen dopisuje nowe świece i aktualizuje tylko ostatnie dni; zamknięte świece już wczytane zostają bez zmian.
 - **Backup → Export backup** zapisuje wszystko do pliku `.json` (na telefonie przez menu Udostępnij), **Import backup…** wczytuje plik;
   przed importem i przed migracją formatu bieżące dane trafiają do archiwum.
@@ -82,7 +82,7 @@ więc przetrwają odświeżenie i restart przeglądarki. Cała historia jest odt
 
 ## Założenia
 
-- Zlecenia w formularzu liczą się na cenach live z Hyperliquid (odświeżanie co 10 s). Zapis sygnału zapisuje te ceny jako ceny
+- Zlecenia w formularzu liczą się na cenach live z Hyperliquid (odświeżanie co 10 s i od razu po powrocie do aplikacji; formularz pokazuje, ile sekund temu ceny były aktualizowane, i ostrzega, gdy dłużej niż 45 s nie ma nowych). Zapis sygnału zapisuje te ceny jako ceny
   realizacji (bez opłat i poślizgu) i z nich liczony jest performance. Starsze sygnały bez zapisanych cen używają zamknięcia D-1.
 - SDCA: **BUY x%** = x% rezerwy gotówki SDCA (1% ze $100 = BTC za $1), **SELL x%** = x% posiadanego BTC, po bieżącej cenie BTC.
 - RSPS: % alokacji dotyczy całej części RSPS (tokeny + gotówka RSPS), więc wolna gotówka jest rozdzielana według sygnału.
