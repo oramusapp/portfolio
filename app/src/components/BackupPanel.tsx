@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import { SCHEMA_VERSION, exportBackup, importBackup, readArchive, archive, restoreValue, writeKey, type ArchiveEntry, type BackupFile } from '../lib/storage';
-import { IcClose } from './icons';
 
 const REASON: Record<ArchiveEntry['reason'], string> = {
   replaced: 'replaced', deleted: 'deleted', unreadable: 'unreadable', 'before-import': 'before import', 'before-migration': 'before update'
@@ -36,7 +35,8 @@ function restore(e: ArchiveEntry) {
   restoreValue(e.key, e.data, e.label);
 }
 
-export function BackupPanel({ onClose }: { onClose: () => void }) {
+/** Backup section of the Settings window: export / import and the restorable archive. */
+export function BackupSection() {
   const [entries, setEntries] = useState(readArchive);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -63,14 +63,8 @@ export function BackupPanel({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal narrow" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <div><h2>Backup</h2>
-            <div className="dim small">The app never overwrites or deletes your data on its own. Replaced and deleted records are kept in the archive below.</div></div>
-          <button className="icon" onClick={onClose}><IcClose /></button>
-        </div>
-
+      <>
+        <div className="dim small">The app never overwrites or deletes your data on its own. Replaced and deleted records are kept in the archive.</div>
         <div className="split">
           <div className="card pane">
             <h3>Export</h3>
@@ -86,8 +80,8 @@ export function BackupPanel({ onClose }: { onClose: () => void }) {
         </div>
         {msg && <div className={msg.ok ? 'pos small' : 'warn small'}>{msg.text}</div>}
 
-        <div className="card pane">
-          <h3>Archive <span className="dim">({entries.length})</span></h3>
+        <details className="card pane archive">
+          <summary><h3>Archive <span className="dim">({entries.length})</span></h3></summary>
           {!entries.length && <div className="dim small">Nothing archived yet.</div>}
           {entries.length > 0 && (
             <div className="table-wrap">
@@ -106,8 +100,7 @@ export function BackupPanel({ onClose }: { onClose: () => void }) {
               </table>
             </div>
           )}
-        </div>
-      </div>
-    </div>
+        </details>
+      </>
   );
 }

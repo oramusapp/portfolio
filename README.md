@@ -31,18 +31,25 @@ Aplikacja jest PWA. Otwórz https://oramusapp.github.io/portfolio/ i wybierz **D
 
 ## Wygląd
 
-Tło z delikatnym „cyfrowym deszczem” (Matrix), okna jednolite. Przełącznik ☀/☾ u góry zmienia tryb dzienny / ciemny
+Tło z delikatnym „cyfrowym deszczem” (Matrix), okna jednolite. **Ustawienia** (⚙ u góry) → *Appearance* zmienia tryb dzienny / ciemny
 (zapamiętywany). Tryb ciemny ma czysto czarne tło pod ekrany OLED.
+
+## Przypomnienia
+
+**Ustawienia** (⚙) → *Reminders* → **Add reminder**: co sprawdzić, co wtedy zrobić (opcjonalnie) i kiedy — co miesiąc danego dnia
+(krótsze miesiące: ostatni dzień), ostatniego dnia miesiąca, co tydzień w wybrany dzień albo jednorazowo. W wyznaczonym dniu
+(i później, jeśli nie otworzysz aplikacji) przypomnienie pojawia się na górze strony, a ⚙ pokazuje licznik, dopóki nie klikniesz **Done**.
+Działa w aplikacji (po jej otwarciu) — bez powiadomień push, które wymagałyby serwera.
 
 ## Ochrona danych
 
 - Aplikacja nic nie nadpisuje ani nie usuwa sama: zapis następuje tylko po Twojej zmianie, a samo otwarcie aplikacji niczego nie zapisuje.
 - Kilka otwartych kart/okien synchronizuje się, więc starsza karta nie nadpisze nowszych danych.
 - Zastąpione i usunięte sygnały, poprzednie *Portfolio holdings* i *Net worth* trafiają do archiwum (do 300 wpisów) —
-  przycisk **Backup** u góry → *Archive* → **Restore**. Nieczytelne dane też są kopiowane do archiwum, zanim cokolwiek je zastąpi.
+  **Ustawienia** (⚙) → *Backup* → *Archive* → **Restore**. Nieczytelne dane też są kopiowane do archiwum, zanim cokolwiek je zastąpi.
 - Zapis dzisiejszego sygnału zawsze aktualizuje *Portfolio holdings* do stanu po zleceniach (formularz pokazuje ten stan przed zapisem), więc kolejny sygnał startuje z bieżących ilości coinów i gotówki. Poprzedni stan trafia do archiwum. Edycja starszego sygnału nie zmienia holdings.
 - Odświeżanie cen dopisuje nowe świece i aktualizuje tylko ostatnie dni; zamknięte świece już wczytane zostają bez zmian.
-- **Backup → Export backup** zapisuje wszystko do pliku `.json` (na telefonie przez menu Udostępnij), **Import backup…** wczytuje plik;
+- **Ustawienia → Backup → Export backup** zapisuje wszystko do pliku `.json` (na telefonie przez menu Udostępnij), **Import backup…** wczytuje plik;
   przed importem i przed migracją formatu bieżące dane trafiają do archiwum.
 - Gdy pamięć przeglądarki jest pełna lub zablokowana, aplikacja pokazuje komunikat *Could not save* zamiast milczeć.
 

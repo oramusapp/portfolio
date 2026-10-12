@@ -19,7 +19,7 @@
   --hover: #0000000a; --overlay: rgba(20, 32, 25, .38); --shadow: 0 10px 30px #1a2a2033; --tip-bg: #ffffff; --zero: #6b7b71;
   --badge-buy: #dcf3e5; --badge-sell: #fbe3e3; --badge-hold: #edf1ee;
   --err-bg: #fdecec; --err-line: #f2c4c4; --err-text: #b42c2c;
-  --rain: #0f7c3f; --rain-fade: rgba(238, 243, 239, .14); --rain-opacity: .13;
+  --rain: #0a6b34; --rain-fade: rgba(238, 243, 239, .12); --rain-opacity: .24;
   color-scheme: light;
 }
 
@@ -223,3 +223,22 @@ img { -webkit-user-drag: none; user-select: none; }
 .dup-box { display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px dashed var(--line); border-radius: 10px; font-size: 14px; align-items: flex-start; }
 .dup-box b { font-weight: 600; }
 .split > .pane { align-self: start; }
+
+/* settings + reminders */
+.theme-btn { position: relative; }
+.badge-dot { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--warn); color: #000; font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+.set-sec { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1px solid var(--line); }
+.set-sec h3 { margin: 0; }
+.rem-form textarea { background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 9px; padding: 7px 10px; font: inherit; resize: vertical; }
+.rem-form textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.rem-form label input { width: 100%; }
+.rem-when { flex-wrap: wrap; } .rem-when select { flex: 1; min-width: 180px; }
+.rem-row { display: flex; align-items: flex-start; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--line-2); }
+.rem-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.rem-action { white-space: pre-wrap; font-size: 14px; }
+.rem-due { display: flex; flex-direction: column; gap: 10px; }
+.rem-card { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-color: var(--warn); }
+.rem-ic { color: var(--warn); flex: none; }
+details.archive summary { cursor: pointer; list-style: none; } details.archive summary::-webkit-details-marker { display: none; }
+details.archive summary h3::before { content: '▸ '; color: var(--dim); } details.archive[open] summary h3::before { content: '▾ '; }
+details.archive summary h3 { margin: 0; }

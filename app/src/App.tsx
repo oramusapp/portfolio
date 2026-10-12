@@ -3,7 +3,10 @@ import { benchmark, executeSignal, simulate, type Signal } from './lib/engine';
 import { priceOn } from './lib/prices';
 import { usePersisted, archive, SAVE_FAILED } from './lib/storage';
 import { applyTheme } from './lib/theme';
-import { IcMoon, IcSun } from './components/icons';
+import { IcGear } from './components/icons';
+import { SettingsPanel } from './components/SettingsPanel';
+import { RemindersDue } from './components/RemindersDue';
+import { dueFor, localToday, type Reminder } from './lib/reminders';
 import { usePrices } from './lib/usePrices';
 import { CASH, TOKENS, emojiOf } from './lib/tokens';
 import { addDays, msToReset, todayUtc } from './lib/utc';
@@ -16,7 +19,6 @@ import { PriceChart, PRICE_DAYS } from './components/PriceChart';
 import { Footer } from './components/Footer';
 import { HoldingsPanel, type Holdings } from './components/HoldingsPanel';
 import { NetWorthPanel, type NetWorth } from './components/NetWorthPanel';
-import { BackupPanel } from './components/BackupPanel';
 import { PortfolioView } from './components/PortfolioView';
 
 const BENCH_COLORS: Record<string, string> = { BTC: 'var(--amber)', SOL: 'var(--cyan)' };
@@ -44,7 +46,18 @@ export default function App() {
   // Net worth across asset classes (bottom-right button), entered by hand.
   const [netWorth, setNetWorth] = usePersisted<NetWorth>('networth', { currency: 'USD', items: [], updatedAt: 0 });
   const [netWorthOpen, setNetWorthOpen] = useState(false);
-  const [backupOpen, setBackupOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [reminders, setReminders] = usePersisted<Reminder[]>('reminders', []);
+  const dueCount = reminders.filter((r) => dueFor(r, localToday(new Date(now)))).length;
+  const saveReminder = (r: Reminder) => {
+    const old = reminders.find((x) => x.id === r.id);
+    if (old) archive('pp.reminders', 'replaced', `Reminder “${old.title}”`, reminders);
+    setReminders((l) => (l.some((x) => x.id === r.id) ? l.map((x) => (x.id === r.id ? r : x)) : [...l, r]));
+  };
+  const deleteReminder = (r: Reminder) => {
+    archive('pp.reminders', 'deleted', `Reminder “${r.title}”`, reminders);
+    setReminders((l) => l.filter((x) => x.id !== r.id));
+  };
   const [theme, setTheme] = usePersisted<'dark' | 'light'>('theme', 'dark');
   useEffect(() => { applyTheme(theme); }, [theme]);
   const [portfolioOpen, setPortfolioOpen] = useState(false);
@@ -113,13 +126,15 @@ export default function App() {
   return (
     <div className="page">
       <div className="topbar">
-        <button className="theme-btn" title={theme === 'dark' ? 'Day mode' : 'Dark mode'} aria-label="Switch day / dark mode"
-          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <IcSun width={19} /> : <IcMoon width={19} />}</button>
-        <button className="btn ghost small" onClick={() => setBackupOpen(true)}>Backup</button>
+        <button className="theme-btn" title="Settings" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
+          <IcGear width={19} />{dueCount > 0 && <span className="badge-dot">{dueCount}</span>}
+        </button>
         <button className="avatar-btn" title="Portfolio holdings" aria-label="Portfolio holdings" onClick={() => setHoldingsOpen(true)}>
           <img src="./holdings-icon.png" alt="" />
         </button>
       </div>
+
+      <RemindersDue reminders={reminders} onDone={(r, on) => setReminders((l) => l.map((x) => (x.id === r.id ? { ...x, doneFor: on } : x)))} />
 
       <Kpis value={holdings ? hSdca + hRsps : last?.value ?? 0} strategy={last?.totalGain ?? NaN} btc={btcBh} sdcaValue={holdings ? hSdca : last?.sdcaValue ?? 0} rspsValue={holdings ? hRsps : last?.rspsValue ?? 0} onOpenPortfolio={() => setPortfolioOpen(true)}
         gains={last && last.invested > 0 ? last.value / last.invested - 1 : NaN} />
@@ -165,9 +180,9 @@ export default function App() {
 
       {portfolioOpen && <PortfolioView today={today} book={book} onClose={() => setPortfolioOpen(false)}
         sdca={holdings?.sdca ?? sim?.sdca ?? { cash: 0, btc: 0 }} rsps={holdings?.rsps ?? sim?.rsps ?? { cash: 0, units: {} }} />}
-      {backupOpen && <BackupPanel onClose={() => setBackupOpen(false)} />}
+      {settingsOpen && <SettingsPanel theme={theme} setTheme={setTheme} reminders={reminders} saveReminder={saveReminder} deleteReminder={deleteReminder} onClose={() => setSettingsOpen(false)} />}
       {saveFailed && <div className="update-banner"><div><b>Could not save</b><div className="dim small">The browser’s storage is full or blocked. Export a backup now.</div></div>
-        <button className="btn gold small" onClick={() => { setSaveFailed(false); setBackupOpen(true); }}>Backup</button></div>}
+        <button className="btn gold small" onClick={() => { setSaveFailed(false); setSettingsOpen(true); }}>Backup</button></div>}
 
       {holdingsOpen && <HoldingsPanel today={today} book={book} onNeed={setFormSyms}
         initial={holdings ?? { sdca: sim?.sdca ?? { cash: 0, btc: 0 }, rsps: sim?.rsps ?? { cash: 0, units: {} }, updatedAt: 0 }}
