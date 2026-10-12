@@ -79,7 +79,7 @@ więc przetrwają odświeżenie i restart przeglądarki. Cała historia jest odt
   RSPS: tokeny z listy z ilościami + rezerwa gotówki; wartości liczą się same z ceny live. Następny sygnał startuje z tego stanu,
   a zapisanie dzisiejszego sygnału aktualizuje go o wykonane zlecenia. Wykres i KPI dalej liczone są z historii sygnałów.
 - **Net worth** (ikonka w prawym dolnym rogu): ręcznie wpisywane kwoty w kategoriach Crypto, Stock market, Metals (złoto, srebro…),
-  Cash (waluty) i Bank accounts, z sumą, podsumami i udziałem procentowym. Wszystkie kwoty w jednej walucie wybranej u góry (USD/PLN/EUR, bez przeliczania).
+  Cash (waluty), Bank accounts i Assets (nieruchomości, auta itp.), z sumą, podsumami i udziałem procentowym. Wszystkie kwoty w jednej walucie wybranej u góry (USD/PLN/EUR, bez przeliczania).
 - **Price chart**: dzienne zamknięcia wybranego tokena z ostatnich 365 dni + cena bieżąca.
 
 ## Założenia

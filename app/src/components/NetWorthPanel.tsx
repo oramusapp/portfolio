@@ -8,7 +8,8 @@ export const CATEGORIES = [
   { id: 'stocks', label: 'Stock market', hint: 'e.g. broker account, ETF' },
   { id: 'metals', label: 'Metals (gold, silver…)', hint: 'e.g. gold coins, silver bars' },
   { id: 'cash', label: 'Cash (currencies)', hint: 'e.g. EUR cash, USD cash' },
-  { id: 'bank', label: 'Bank accounts', hint: 'e.g. current account, savings' }
+  { id: 'bank', label: 'Bank accounts', hint: 'e.g. current account, savings' },
+  { id: 'assets', label: 'Assets (real estate, cars…)', hint: 'e.g. apartment, car, land' }
 ] as const;
 export type Category = typeof CATEGORIES[number]['id'];
 export const CURRENCIES = ['USD', 'PLN', 'EUR'] as const;
@@ -16,7 +17,7 @@ export interface NetWorthItem { cat: Category; name: string; amount: number; }
 export interface NetWorth { currency: typeof CURRENCIES[number]; items: NetWorthItem[]; updatedAt: number; }
 
 type Row = { cat: Category; name: string; v: string };
-const COLORS: Record<Category, string> = { crypto: 'var(--accent)', stocks: 'var(--cyan)', metals: 'var(--amber)', cash: '#84cc16', bank: '#d946ef' };
+const COLORS: Record<Category, string> = { crypto: 'var(--accent)', stocks: 'var(--cyan)', metals: 'var(--amber)', cash: '#84cc16', bank: '#d946ef', assets: '#f97316' };
 
 const money = (v: number, cur: string) =>
   Number.isFinite(v) ? `${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}` : '—';
