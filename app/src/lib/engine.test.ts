@@ -77,6 +77,14 @@ describe('simulation', () => {
     expect(sim.rows[1].invested).toBeCloseTo(2500);
     expect(sim.rows[1].rRsps).toBe(0);
   });
+  it('keeps a strategy unchanged when it has no new signal that day', () => {
+    const next: Signal = { ...sig, date: '2026-01-03', px: { BTC: 99, SOL: 11 }, sdcaNew: false, rspsNew: false,
+      sdca: { pct: -100, cash: 0, btc: 1000 / 100 }, rsps: { alloc: { CASH: 100 }, cash: 500, units: { SOL: 50 } } };
+    const sim = simulate([sig, next], book, '2026-01-03')!;
+    expect(sim.rows[1].sdca?.side).toBe('hold');        // the -100% is ignored
+    expect(sim.rows[1].rsps).toBeNull();                 // no rebalance
+    expect(sim.sdca.btc).toBeCloseTo(10); expect(sim.rsps.units.SOL).toBe(50);
+  });
   it('computes buy & hold benchmarks', () => {
     expect(benchmark(book, 'BTC', '2026-01-01', ['2026-01-02', '2026-01-03'])).toEqual([expect.closeTo(0.1), expect.closeTo(-0.01)]);
   });

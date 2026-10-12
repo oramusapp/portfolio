@@ -4,7 +4,7 @@ import { priceOn, type PriceBook } from '../lib/prices';
 import { ALL_ASSETS, CASH, TOKENS, emojiOf } from '../lib/tokens';
 import { addDays } from '../lib/utc';
 import { price, usd } from '../lib/format';
-import { RebalanceView, SdcaOrderView } from './SignalHistory';
+import { RebalanceView, SdcaOrderView, allocText } from './SignalHistory';
 import { IcClose, IcPlus, IcTrash } from './icons';
 
 interface Props {
@@ -54,6 +54,9 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
   const [alloc, setAlloc] = useState<Pair[]>(toPairs(initial.rsps.alloc));
   const [rspsCash, setRspsCash] = useState(String(+initial.rsps.cash.toFixed(2)));
   const [units, setUnits] = useState<Pair[]>(toPairs(initial.rsps.units));
+  // tick a strategy to enter a new signal for it; unticked = no change today (DUPLICATED: no trades, holdings carried)
+  const [sdcaNew, setSdcaNew] = useState(editingExisting ? initial.sdcaNew !== false : false);
+  const [rspsNew, setRspsNew] = useState(editingExisting ? initial.rspsNew !== false : false);
 
   // today's signal: live prices (stored on save as the execution prices); an older signal keeps the prices it was saved with
   const live = date === today;
@@ -74,18 +77,25 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
   const sum = alloc.reduce((s, r) => s + n(r.v), 0);
 
   const errors: string[] = [];
-  if (!Number.isFinite(pctNum) || pctNum < 0 || pctNum > 100) errors.push('SDCA signal must be between 0% and 100%.');
+  if (sdcaNew && (!Number.isFinite(pctNum) || pctNum < 0 || pctNum > 100)) errors.push('SDCA signal must be between 0% and 100%.');
   if (!(sdcaInput.cash >= 0) || !(sdcaInput.btc >= 0)) errors.push('SDCA cash and BTC must be ≥ 0.');
   if (!(rspsInput.cash >= 0) || Object.values(unitsRec).some((v) => !(v >= 0))) errors.push('RSPS holdings must be ≥ 0.');
-  const ae = allocError(allocRec); if (ae) errors.push(`RSPS: ${ae}`);
+  const ae = rspsNew ? allocError(allocRec) : null; if (ae) errors.push(`RSPS: ${ae}`);
   if (!Number.isFinite(btcPx)) errors.push('No BTC price yet (still loading).');
-  if (plan.missing.length) errors.push(`No price for ${plan.missing.join(', ')} yet (still loading).`);
+  if (rspsNew && plan.missing.length) errors.push(`No price for ${plan.missing.join(', ')} yet (still loading).`);
+  const nothing = !sdcaNew && !rspsNew;
+  const afterSdca = sdcaNew && order ? order.after : { cash: sdcaInput.cash, btc: sdcaInput.btc };
+  const afterRsps = rspsNew ? plan.after : { cash: rspsInput.cash, units: unitsRec };
 
   const save = () => {
-    if (errors.length) return;
+    if (errors.length || nothing) return;
     const used = ['BTC', ...Object.keys(allocRec), ...Object.keys(unitsRec)].filter((k) => k !== CASH);
     const snapshot = Object.fromEntries(used.map((k) => [k, px(k)]).filter(([, v]) => Number.isFinite(v as number)));
-    onSave({ date, createdAt: Date.now(), sdca: sdcaInput, rsps: { alloc: Object.fromEntries(Object.entries(allocRec).filter(([, v]) => v > 0)), cash: rspsInput.cash, units: unitsRec }, px: snapshot });
+    onSave({
+      date, createdAt: Date.now(), px: snapshot, sdcaNew, rspsNew,
+      sdca: sdcaNew ? sdcaInput : { ...sdcaInput, pct: 0 },
+      rsps: { alloc: rspsNew ? Object.fromEntries(Object.entries(allocRec).filter(([, v]) => v > 0)) : initial.rsps.alloc, cash: rspsInput.cash, units: unitsRec }
+    });
   };
 
   return (
@@ -102,7 +112,17 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
 
         <div className="split">
           <div className="card pane">
-            <h3>Strategy 1 · SDCA <span className="dim">(BTC only)</span></h3>
+            <div className="pane-head">
+              <h3>Strategy 1 · SDCA <span className="dim">(BTC only)</span></h3>
+              <label className="check new-toggle"><input type="checkbox" checked={sdcaNew} onChange={(e) => setSdcaNew(e.target.checked)} /><span />New signal today</label>
+            </div>
+            {!sdcaNew ? (
+              <div className="dup-box">
+                <span className="tag dup">DUPLICATED</span>
+                <div>No new SDCA signal — no trade today. Holdings stay: <b>{fmtUnits(sdcaInput.btc)} BTC</b> + <b>{usd(sdcaInput.cash, 2)}</b> cash.</div>
+                <div className="dim small">Tick “New signal today” to enter a buy or sell.</div>
+              </div>
+            ) : <>
             <div className="seg">
               <button className={side === 'buy' ? 'on pos' : ''} onClick={() => setSide('buy')}>Buy BTC</button>
               <button className={side === 'sell' ? 'on neg' : ''} onClick={() => setSide('sell')}>Sell BTC</button>
@@ -114,10 +134,22 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
             <div className="dim small">BTC {live ? 'live' : 'at save'}: {price(btcPx)}</div>
             <h4 style={{ marginTop: 8 }}>Order</h4>
             {order && <SdcaOrderView o={order} live={live} />}
+            </>}
           </div>
 
           <div className="card pane">
-            <h3>Strategy 2 · RSPS</h3>
+            <div className="pane-head">
+              <h3>Strategy 2 · RSPS</h3>
+              <label className="check new-toggle"><input type="checkbox" checked={rspsNew} onChange={(e) => setRspsNew(e.target.checked)} /><span />New signal today</label>
+            </div>
+            {!rspsNew ? (
+              <div className="dup-box">
+                <span className="tag dup">DUPLICATED</span>
+                <div>No new RSPS signal — no rebalance today. The allocation stays: <b>{allocText(initial.rsps.alloc) || '—'}</b></div>
+                <div>Holdings stay: <b>{Object.entries(unitsRec).map(([k, u]) => `${fmtUnits(u)} ${k}`).join(', ') || 'no tokens'}</b> + <b>{usd(rspsInput.cash, 2)}</b> cash.</div>
+                <div className="dim small">Tick “New signal today” to enter a new allocation.</div>
+              </div>
+            ) : <>
             <div className="dim small">Target allocation (must sum to 100%):</div>
             <PairRows rows={alloc} setRows={setAlloc} options={ALL_ASSETS} unit="%" placeholder="0" />
             <div className={Math.abs(sum - 100) <= 0.01 ? 'pos small' : 'warn small'}>Sum: {+sum.toFixed(2)}%</div>
@@ -126,18 +158,21 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
             <PairRows rows={units} setRows={setUnits} options={TOKENS.map((t) => t.sym)} unit="units" placeholder="0" extra={(u) => <span className="val">{usd(n(u.v) * px(u.sym), 2)}</span>} />
             <h4 style={{ marginTop: 12 }}>Orders</h4>
             <RebalanceView p={plan} live={live} />
+            </>}
           </div>
         </div>
 
         {errors.length > 0 && <ul className="errors">{errors.map((e) => <li key={e}>{e}</li>)}</ul>}
         <div className="modal-foot">
           <div className="after-note">
-            {live && order && !plan.missing.length
-              ? <>After saving, Portfolio holdings become — <b>SDCA:</b> {fmtUnits(order.after.btc)} BTC + {usd(order.after.cash, 2)} · <b>RSPS:</b> {Object.entries(plan.after.units).map(([k, u]) => `${fmtUnits(u)} ${k}`).join(', ') || 'no tokens'} + {usd(plan.after.cash, 2)}</>
-              : !live ? 'Editing an older signal does not change Portfolio holdings.' : null}
+            {nothing
+              ? <>No new signal ticked — nothing to save. {editingExisting ? 'To make this day DUPLICATED, delete its signal (Edit → bin).' : 'Today stays DUPLICATED.'}</>
+              : live && (!rspsNew || !plan.missing.length)
+                ? <>After saving, Portfolio holdings become — <b>SDCA:</b> {fmtUnits(afterSdca.btc)} BTC + {usd(afterSdca.cash, 2)} · <b>RSPS:</b> {Object.entries(afterRsps.units).map(([k, u]) => `${fmtUnits(u)} ${k}`).join(', ') || 'no tokens'} + {usd(afterRsps.cash, 2)}</>
+                : !live ? 'Editing an older signal does not change Portfolio holdings.' : null}
           </div>
           <button className="btn ghost" onClick={onClose}>Cancel</button>
-          <button className="btn gold" disabled={errors.length > 0} onClick={save}>Save signal</button>
+          <button className="btn gold" disabled={errors.length > 0 || nothing} onClick={save}>Save signal</button>
         </div>
       </div>
     </div>

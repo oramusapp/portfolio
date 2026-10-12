@@ -214,3 +214,12 @@ img { -webkit-user-drag: none; user-select: none; }
 .after-note { margin-right: auto; align-self: center; font-size: 13px; color: var(--dim); max-width: 60%; }
 .after-note b { color: var(--text); font-weight: 600; }
 @media (max-width: 700px) { .modal-foot { flex-wrap: wrap; } .after-note { max-width: 100%; flex-basis: 100%; } }
+
+/* per-strategy "new signal today" toggle */
+.pane-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pane-head h3 { margin: 0; }
+.check.new-toggle { font-size: 14px; font-weight: 600; padding: 6px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.check.new-toggle:has(input:checked) { border-color: var(--accent); color: var(--accent); }
+.dup-box { display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px dashed var(--line); border-radius: 10px; font-size: 14px; align-items: flex-start; }
+.dup-box b { font-weight: 600; }
+.split > .pane { align-self: start; }

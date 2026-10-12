@@ -17,7 +17,17 @@ import { addDays, daysBetween } from './utc';
 
 export interface SdcaInput { pct: number; cash: number; btc: number; }   // pct > 0 buy, < 0 sell
 export interface RspsInput { alloc: Record<string, number>; cash: number; units: Record<string, number>; }
-export interface Signal { date: string; createdAt: number; sdca: SdcaInput; rsps: RspsInput; px?: Record<string, number>; }
+/** sdcaNew / rspsNew = false: no new signal for that strategy that day (DUPLICATED) — no trades, holdings carried as they are.
+ *  Missing (older signals) means true. */
+export interface Signal { date: string; createdAt: number; sdca: SdcaInput; rsps: RspsInput; px?: Record<string, number>; sdcaNew?: boolean; rspsNew?: boolean; }
+
+/** The orders a signal makes at the given prices; a strategy without a new signal keeps its holdings unchanged. */
+export function executeSignal(sig: Signal, px: (sym: string) => number) {
+  const order = sdcaOrder(sig.sdcaNew === false ? { ...sig.sdca, pct: 0 } : sig.sdca, px('BTC'));
+  const plan = sig.rspsNew === false ? null : rebalance(sig.rsps, px);
+  const rsps: RspsState = plan ? plan.after : { cash: sig.rsps.cash, units: { ...sig.rsps.units } };
+  return { order, plan, sdca: order.after, rsps };
+}
 export interface SdcaState { cash: number; btc: number; }
 export interface RspsState { cash: number; units: Record<string, number>; }
 
@@ -125,9 +135,9 @@ export function simulate(signals: Signal[], book: PriceBook, today: string): Sim
       const typed = sdcaValue(sig.sdca, pe('BTC')) + rspsValue({ cash: sig.rsps.cash, units: sig.rsps.units }, pe);
       const carried = rows.length ? sdcaValue(sd, pe('BTC')) + rspsValue(rs, pe) : 0;
       if (Number.isFinite(typed - carried)) invested += typed - carried;
-      order = sdcaOrder(sig.sdca, pe('BTC'));
-      plan = rebalance(sig.rsps, pe);
-      sd = order.after; rs = plan.after; from = pe;
+      const ex = executeSignal(sig, pe);
+      order = ex.order; plan = ex.plan;
+      sd = ex.sdca; rs = ex.rsps; from = pe;
     }
     const s0 = sdcaValue(sd, from('BTC')), s1 = sdcaValue(sd, p1('BTC'));
     const r0 = rspsValue(rs, from), r1 = rspsValue(rs, p1);

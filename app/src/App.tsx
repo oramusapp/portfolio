@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { benchmark, rebalance, sdcaOrder, simulate, type Signal } from './lib/engine';
+import { benchmark, executeSignal, simulate, type Signal } from './lib/engine';
 import { priceOn } from './lib/prices';
 import { usePersisted, archive, SAVE_FAILED } from './lib/storage';
 import { applyTheme } from './lib/theme';
@@ -98,7 +98,8 @@ export default function App() {
     if (s.date === today) {   // today's orders are executed: holdings move to the post-trade state (old state archived)
       if (holdings) archive('pp.holdings', 'replaced', 'Portfolio holdings', holdings);
       const p0 = (sym: string) => s.px?.[sym] ?? priceOn(book, sym, addDays(s.date, -1));
-      setHoldings({ sdca: sdcaOrder(s.sdca, p0('BTC')).after, rsps: rebalance(s.rsps, p0).after, updatedAt: Date.now() });
+      const ex = executeSignal(s, p0);
+      setHoldings({ sdca: ex.sdca, rsps: ex.rsps, updatedAt: Date.now() });
     }
     setForm(null); setFormSyms([]);
   };

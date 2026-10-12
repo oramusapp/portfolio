@@ -104,7 +104,8 @@ export function SignalHistory({ rows, today, hasToday, resetIn, onAdd, onEdit, o
                   <td className="date">{r.date}</td>
                   <td>
                     <span className="alloc">{allocText(r.signal.rsps.alloc)}</span>
-                    <span className="sdca-chip">{sdcaText(r.duplicated ? 0 : r.signal.sdca.pct)}</span>
+                    <span className="sdca-chip">{!r.duplicated && r.signal.sdcaNew === false ? 'SDCA dup' : sdcaText(r.duplicated ? 0 : r.signal.sdca.pct)}</span>
+                    {!r.duplicated && r.signal.rspsNew === false && <span className="sdca-chip">RSPS dup</span>}
                     {r.duplicated ? <span className="tag dup">DUPLICATED</span> : <span className="tag sig">Signal <IcChevron width={14} className={open === r.date ? 'flip' : ''} /></span>}
                   </td>
                   <td className={`r ${tone(r.r)}`}>{pct(r.r)}</td>
@@ -124,11 +125,11 @@ export function SignalHistory({ rows, today, hasToday, resetIn, onAdd, onEdit, o
                     <div className="split">
                       <div>
                         <h4>SDCA (BTC) <span className={tone(r.rSdca)}>{pct(r.rSdca)} day</span> · <span className={tone(r.sdcaGain)}>{pct(r.sdcaGain)} total</span> · {usd(r.sdcaValue, 2)}</h4>
-                        {r.sdca ? <SdcaOrderView o={r.sdca} /> : <div className="dim">Carried from the signal of {r.signal.date}: no trade.</div>}
+                        {r.sdca && r.signal.sdcaNew !== false ? <SdcaOrderView o={r.sdca} /> : <div className="dim">{r.duplicated ? `Carried from the signal of ${r.signal.date}` : 'No new SDCA signal (DUPLICATED)'}: no trade.</div>}
                       </div>
                       <div>
                         <h4>RSPS <span className={tone(r.rRsps)}>{pct(r.rRsps)} day</span> · <span className={tone(r.rspsGain)}>{pct(r.rspsGain)} total</span> · {usd(r.rspsValue, 2)}</h4>
-                        {r.rsps ? <RebalanceView p={r.rsps} /> : <div className="dim">Carried from the signal of {r.signal.date}: no rebalance.</div>}
+                        {r.rsps ? <RebalanceView p={r.rsps} /> : <div className="dim">{r.duplicated ? `Carried from the signal of ${r.signal.date}` : 'No new RSPS signal (DUPLICATED)'}: no rebalance.</div>}
                       </div>
                     </div>
                     {r.missing.length > 0 && <div className="warn small">Missing price for {r.missing.join(', ')} — that day’s return may be incomplete.</div>}

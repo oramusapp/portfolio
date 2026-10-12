@@ -66,6 +66,8 @@ więc przetrwają odświeżenie i restart przeglądarki. Cała historia jest odt
   aplikacja pokazuje kwotę kupna (z cashu SDCA) albo ilość BTC do sprzedaży i obcina zlecenie do dostępnego cashu/BTC.
   RSPS: docelowa alokacja (walidacja sumy = 100%, tylko tokeny z listy) + obecny cash RSPS i ilości tokenów;
   aplikacja pokazuje dla każdego aktywa BUY/SELL w %, w $ i w sztukach. Formularz jest wstępnie wypełniony stanem przeniesionym z poprzedniego dnia.
+- **Okienko „New signal today”** osobno dla SDCA i RSPS: zaznaczone = wpisujesz sygnał; niezaznaczone = ta strategia zostaje bez zmian
+  (bez zleceń, holdings bez zmian, w historii „SDCA dup” / „RSPS dup”). Gdy żadne nie jest zaznaczone, nic się nie zapisuje i dzień jest DUPLICATED.
 - **Reset dzienny**: o 00:00 UTC zaczyna się nowy dzień i trzeba wpisać nowy sygnał. Dni bez sygnału pojawiają się jako `DUPLICATED`
   z przeniesioną alokacją. Kliknięcie wiersza pokazuje zlecenia i wynik każdej strategii osobno. `Edit` pozwala poprawić lub usunąć sygnał.
 - **Ceny**: dzienne świece UTC z Hyperliquid (perpy; kPEPE/kSHIB przeliczane na 1 token), a Binance spot tylko jako zapas, gdy Hyperliquid nie odpowiada.
