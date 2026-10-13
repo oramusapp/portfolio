@@ -17,7 +17,7 @@ import { Kpis } from './components/Kpis';
 import { LineChart, type Line } from './components/LineChart';
 import { SignalHistory } from './components/SignalHistory';
 import { SignalForm } from './components/SignalForm';
-import { PriceChart, PRICE_DAYS } from './components/PriceChart';
+import { PriceChart, PRICE_DAYS, CS2 } from './components/PriceChart';
 import { Footer } from './components/Footer';
 import { HoldingsPanel, type Holdings, type Flow } from './components/HoldingsPanel';
 import { NetWorthPanel, CATEGORIES, type NetWorth, type NetWorthSnapshot } from './components/NetWorthPanel';
@@ -81,7 +81,7 @@ export default function App() {
   const first = sorted[0]?.date;
   const from = addDays(first && first < addDays(today, -PRICE_DAYS) ? first : addDays(today, -PRICE_DAYS), -3);
   const needed = [
-    'BTC', 'SOL', chartSym, ...bench.extra, ...formSyms, ...Object.keys(holdings?.rsps.units ?? {}),
+    'BTC', 'SOL', ...(chartSym === CS2 ? [] : [chartSym]), ...bench.extra, ...formSyms, ...Object.keys(holdings?.rsps.units ?? {}),
     ...sorted.flatMap((s) => [...Object.keys(s.rsps.alloc), ...Object.keys(s.rsps.units)])
   ];
   const { book, errors, loading, liveAt } = usePrices(needed, from);

@@ -1,0 +1,32 @@
+# Daily CS2 market snapshot (Skinport public API) → cs2.json, served by GitHub Pages next to the app.
+# Runs at 00:05 UTC, right after the daily candle closes. Can also be started by hand (Actions → CS2 snapshot → Run workflow).
+name: CS2 snapshot
+on:
+  schedule:
+    - cron: '5 0 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: cs2-snapshot
+  cancel-in-progress: false
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fetch Skinport data and update cs2.json
+        run: node scripts/cs2-index.mjs
+      - name: Commit if changed
+        run: |
+          if git diff --quiet -- cs2.json; then echo "No change"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add cs2.json
+          git commit -m "CS2 snapshot $(date -u +%F)"
+          for i in 1 2 3; do git pull --rebase origin main && git push origin HEAD:main && exit 0; sleep 10; done
+          exit 1

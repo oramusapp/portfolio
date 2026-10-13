@@ -107,6 +107,14 @@ więc przetrwają odświeżenie i restart przeglądarki. Cała historia jest odt
 - **Historia Net worth**: każdy zapis tworzy punkt dnia (ostatni zapis dnia wygrywa); wykres od drugiego punktu.
 - **Przypomnienie o backupie**: gdy od ostatniego eksportu minęło 30 dni, na górze pojawia się *Time for a backup* (*Later* = za 7 dni).
 
+## CS2 (Price chart → „CS2 market (skins)”)
+
+Dane z publicznego API Skinport (bez klucza). Skinport nie pozwala na zapytania z przeglądarki, więc pobiera je GitHub Action
+`.github/workflows/cs2.yml` codziennie o 00:05 UTC (po zamknięciu świecy) i zapisuje do `cs2.json` obok aplikacji
+(skrypt `scripts/cs2-index.mjs`; ręcznie: Actions → *CS2 snapshot* → *Run workflow*). Historia rośnie o jeden punkt dziennie.
+Wskaźniki to nasze definicje (nie Pricempire): wartość wystawionych ofert na Skinport, Momentum (mediana 7 dni vs 30 dni, ważona obrotem),
+Gainers vs Losers, Risk appetite (drogie ≥ $100 vs tanie < $10) i Fear & Greed 0–100 — szczegóły w komentarzu skryptu.
+
 ## Założenia
 
 - Zlecenia w formularzu liczą się na cenach live z Hyperliquid (odświeżanie co 10 s i od razu po powrocie do aplikacji; formularz pokazuje, ile sekund temu ceny były aktualizowane, i ostrzega, gdy dłużej niż 45 s nie ma nowych). Zapis sygnału zapisuje te ceny jako ceny

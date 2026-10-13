@@ -289,3 +289,18 @@ table.mini.stats tr.year-row td { background: var(--surface-2); }
 .hist-more { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
 .actions { align-items: center; }
 .check.opt-toggle { font-size: 14px; color: var(--dim); }
+
+/* CS2 market */
+.cs2 { display: flex; flex-direction: column; gap: 14px; }
+.cs2-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.cs2-cap { font-size: 26px; font-weight: 600; }
+.cs2-note { padding: 18px 0; text-align: center; }
+.cs2-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.cs2-grid .pane { gap: 6px; }
+.cs2-v { font-size: 24px; font-weight: 600; }
+.cs2-sub { font-size: 14px; font-weight: 500; color: var(--dim); }
+.fg-bar { position: relative; height: 8px; border-radius: 4px; background: linear-gradient(90deg, #e5484d, #f0a830 45%, #a3a3a3 50%, #84cc16 60%, #22c55e); }
+.fg-bar i { position: absolute; top: -4px; width: 4px; height: 16px; margin-left: -2px; border-radius: 2px; background: var(--text); box-shadow: 0 0 0 2px var(--surface); }
+.gl-bar { height: 8px; border-radius: 4px; background: var(--neg); overflow: hidden; } .gl-bar i { display: block; height: 100%; background: var(--pos); }
+@media (max-width: 900px) { .cs2-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 640px) { .cs2-head .r { text-align: left; } }
