@@ -1,12 +1,12 @@
-import { IcBolt, IcBtc, IcCase, IcTrend, IcWallet } from './icons';
+import { IcBolt, IcBtc, IcCase, IcEye, IcEyeOff, IcTrend, IcWallet } from './icons';
 import { pct, tone, usd } from '../lib/format';
 
-interface Props { value: number; strategy: number; btc: number; gains: number; sdcaValue: number; rspsValue: number; onOpenPortfolio: () => void; }
+interface Props { value: number; strategy: number; btc: number; gains: number; sdcaValue: number; rspsValue: number; onOpenPortfolio: () => void; hidden: boolean; onToggleHidden: () => void; }
 
-export function Kpis({ value, strategy, btc, gains, sdcaValue, rspsValue, onOpenPortfolio }: Props) {
+export function Kpis({ value, strategy, btc, gains, sdcaValue, rspsValue, onOpenPortfolio, hidden, onToggleHidden }: Props) {
   const vs = strategy - btc;
   const cards = [
-    { v: usd(value), label: 'Portfolio value', icon: IcWallet, cls: '', title: `SDCA ${usd(sdcaValue)} · RSPS ${usd(rspsValue)} — tap for details`, onClick: onOpenPortfolio },
+    { v: usd(value), label: 'Portfolio value', icon: IcWallet, cls: '', title: hidden ? 'Value hidden — tap the eye to show' : `SDCA ${usd(sdcaValue)} · RSPS ${usd(rspsValue)} — tap for details`, onClick: onOpenPortfolio, privacy: true },
     { v: pct(strategy), label: 'Strategy return', icon: IcTrend, cls: tone(strategy), title: 'Time-weighted return of SDCA + RSPS' },
     { v: pct(btc), label: 'BTC buy & hold', icon: IcBtc, cls: tone(btc), title: 'BTC price change since the first signal' },
     { v: Number.isFinite(vs) ? `${(vs * 100).toFixed(1)}% pts` : '—', label: 'Strategy vs BTC', icon: IcBolt, cls: tone(vs), title: 'Strategy return minus BTC buy & hold' },
@@ -17,7 +17,15 @@ export function Kpis({ value, strategy, btc, gains, sdcaValue, rspsValue, onOpen
       {cards.map((c) => (
         <div className={`card kpi ${'onClick' in c ? 'clickable' : ''}`} key={c.label} title={c.title}
           onClick={'onClick' in c ? c.onClick : undefined} role={'onClick' in c ? 'button' : undefined}>
-          <div><div className={`kpi-v ${c.cls}`}>{c.v}</div><div className="kpi-l">{c.label}</div></div>
+          <div>
+            <div className={`kpi-v ${c.cls} ${'privacy' in c && hidden ? 'blurred' : ''}`} aria-hidden={'privacy' in c && hidden}>{c.v}</div>
+            <div className="kpi-l">{c.label}
+              {'privacy' in c && (
+                <button className="eye-btn" aria-label={hidden ? 'Show portfolio value' : 'Hide portfolio value'} title={hidden ? 'Show value' : 'Hide value'}
+                  onClick={(e) => { e.stopPropagation(); onToggleHidden(); }}>{hidden ? <IcEyeOff width={17} /> : <IcEye width={17} />}</button>
+              )}
+            </div>
+          </div>
           <c.icon className={`kpi-ic ${c.cls}`} />
         </div>
       ))}

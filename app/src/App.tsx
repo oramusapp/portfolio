@@ -67,7 +67,8 @@ export default function App() {
   const [theme, setTheme] = usePersisted<'dark' | 'light'>('theme', 'dark');
   useEffect(() => { applyTheme(theme); }, [theme]);
   const [portfolioOpen, setPortfolioOpen] = useState(false);
-  const [feePct, setFeePct] = usePersisted<number>('settings.feePct', 0);   // optional trading fee, % of each trade
+  const [feePct, setFeePct] = usePersisted<number>('settings.feePct', 0);
+  const [hideValue, setHideValue] = usePersisted<boolean>('privacy.hideValue', false);   // blur the Portfolio value tile   // optional trading fee, % of each trade
   const [flows, setFlows] = usePersisted<Flow[]>('flows', []);
   const [series, setSeries] = usePersisted<'total' | 'sdca' | 'rsps'>('chart.series', 'total');
   const [nwHistory, setNwHistory] = usePersisted<NetWorthSnapshot[]>('networth.history', []);
@@ -180,7 +181,7 @@ export default function App() {
         </div>
       )}
 
-      <Kpis value={valueNow} strategy={last?.totalGain ?? NaN} btc={btcBh} sdcaValue={holdings ? hSdca : last?.sdcaValue ?? 0} rspsValue={holdings ? hRsps : last?.rspsValue ?? 0} onOpenPortfolio={() => setPortfolioOpen(true)}
+      <Kpis value={valueNow} strategy={last?.totalGain ?? NaN} btc={btcBh} sdcaValue={holdings ? hSdca : last?.sdcaValue ?? 0} rspsValue={holdings ? hRsps : last?.rspsValue ?? 0} onOpenPortfolio={() => setPortfolioOpen(true)} hidden={hideValue} onToggleHidden={() => setHideValue(!hideValue)}
         gains={invested > 0 ? valueNow / invested - 1 : NaN} />
 
       <section className="card panel">

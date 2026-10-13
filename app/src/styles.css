@@ -277,3 +277,10 @@ table.mini.stats td, table.mini.stats th { font-size: 14px; padding: 8px 10px; }
 table.mini.stats tr.year-row td { background: var(--surface-2); }
 .nw-history { display: flex; flex-direction: column; gap: 4px; }
 .panel-head .checks .seg button { padding: 6px 12px; font-size: 13px; }
+
+/* hide / show the portfolio value */
+.kpi-v.blurred { filter: blur(9px); user-select: none; pointer-events: none; transition: filter .2s; }
+.kpi-v { transition: filter .2s; }
+.kpi-l { display: flex; align-items: center; gap: 6px; }
+.eye-btn { background: none; border: 0; padding: 4px; margin: -4px 0; color: var(--dim); cursor: pointer; display: inline-grid; place-items: center; border-radius: 6px; }
+.eye-btn:hover { color: var(--accent); background: var(--hover); }
