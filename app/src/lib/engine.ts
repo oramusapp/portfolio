@@ -19,12 +19,16 @@ export interface SdcaInput { pct: number; cash: number; btc: number; }   // pct 
 export interface RspsInput { alloc: Record<string, number>; cash: number; units: Record<string, number>; }
 /** sdcaNew / rspsNew = false: no new signal for that strategy that day (DUPLICATED) — no trades, holdings carried as they are.
  *  Missing (older signals) means true. */
-export interface Signal { date: string; createdAt: number; sdca: SdcaInput; rsps: RspsInput; px?: Record<string, number>; sdcaNew?: boolean; rspsNew?: boolean; }
+export interface Signal {
+  date: string; createdAt: number; sdca: SdcaInput; rsps: RspsInput; px?: Record<string, number>; sdcaNew?: boolean; rspsNew?: boolean;
+  fee?: number;   // trading fee as a fraction of each trade's value, stored with the signal (setting at save time)
+}
 
 /** The orders a signal makes at the given prices; a strategy without a new signal keeps its holdings unchanged. */
 export function executeSignal(sig: Signal, px: (sym: string) => number) {
-  const order = sdcaOrder(sig.sdcaNew === false ? { ...sig.sdca, pct: 0 } : sig.sdca, px('BTC'));
-  const plan = sig.rspsNew === false ? null : rebalance(sig.rsps, px);
+  const fee = sig.fee ?? 0;
+  const order = sdcaOrder(sig.sdcaNew === false ? { ...sig.sdca, pct: 0 } : sig.sdca, px('BTC'), fee);
+  const plan = sig.rspsNew === false ? null : rebalance(sig.rsps, px, fee);
   const rsps: RspsState = plan ? plan.after : { cash: sig.rsps.cash, units: { ...sig.rsps.units } };
   return { order, plan, sdca: order.after, rsps };
 }
@@ -36,21 +40,25 @@ const EPS = 1e-9;
 // ---------- SDCA ----------
 export interface SdcaOrder {
   price: number; value: number; side: 'buy' | 'sell' | 'hold'; pct: number;
-  usd: number; btc: number; after: SdcaState;
+  usd: number; btc: number; fee: number; after: SdcaState;
 }
-export function sdcaOrder(inp: SdcaInput, price: number): SdcaOrder {
+/** fee = fraction of the trade value: a buy gets less BTC for the same cash, a sell brings in less cash. */
+export function sdcaOrder(inp: SdcaInput, price: number, fee = 0): SdcaOrder {
   const value = inp.cash + inp.btc * price;
   const pct = Math.min(Math.abs(inp.pct), 100) / 100;
   if (inp.pct > 0) {
-    const usd = pct * Math.max(inp.cash, 0);
-    return { price, value, side: 'buy', pct, usd, btc: usd / price, after: { cash: inp.cash - usd, btc: inp.btc + usd / price } };
+    const usd = pct * Math.max(inp.cash, 0), btc = usd * (1 - fee) / price;
+    return { price, value, side: 'buy', pct, usd, btc, fee: usd * fee, after: { cash: inp.cash - usd, btc: inp.btc + btc } };
   }
   if (inp.pct < 0) {
-    const btc = pct * Math.max(inp.btc, 0);
-    return { price, value, side: 'sell', pct, usd: btc * price, btc, after: { cash: inp.cash + btc * price, btc: inp.btc - btc } };
+    const btc = pct * Math.max(inp.btc, 0), gross = btc * price;
+    return { price, value, side: 'sell', pct, usd: gross * (1 - fee), btc, fee: gross * fee, after: { cash: inp.cash + gross * (1 - fee), btc: inp.btc - btc } };
   }
-  return { price, value, side: 'hold', pct: 0, usd: 0, btc: 0, after: { cash: inp.cash, btc: inp.btc } };
+  return { price, value, side: 'hold', pct: 0, usd: 0, btc: 0, fee: 0, after: { cash: inp.cash, btc: inp.btc } };
 }
+
+/** Smallest SDCA buy: 1% of the SDCA cash reserve. */
+export const MIN_SDCA_BUY_PCT = 1;
 
 // ---------- RSPS ----------
 export function allocError(alloc: Record<string, number>): string | null {
@@ -69,9 +77,10 @@ export interface RebalanceRow {
   sym: string; price: number; curUnits: number; curUsd: number; curPct: number;
   tgtPct: number; tgtUsd: number; deltaUsd: number; deltaPct: number; deltaUnits: number;
 }
-export interface RebalancePlan { total: number; rows: RebalanceRow[]; after: RspsState; missing: string[]; }
+export interface RebalancePlan { total: number; rows: RebalanceRow[]; after: RspsState; missing: string[]; fee: number; }
 
-export function rebalance(inp: RspsInput, px: (sym: string) => number): RebalancePlan {
+/** fee = fraction of the traded value (token sells + buys); it is taken proportionally from the resulting holdings. */
+export function rebalance(inp: RspsInput, px: (sym: string) => number, fee = 0): RebalancePlan {
   const syms = [...new Set([CASH, ...Object.keys(inp.units), ...Object.keys(inp.alloc)])];
   const missing = syms.filter((s) => !Number.isFinite(px(s)));
   const cur = (s: string) => (s === CASH ? inp.cash : inp.units[s] ?? 0);
@@ -84,9 +93,11 @@ export function rebalance(inp: RspsInput, px: (sym: string) => number): Rebalanc
       deltaUsd, deltaPct: total > 0 ? deltaUsd / total * 100 : 0, deltaUnits: deltaUsd / price
     };
   });
+  const feeUsd = fee * rows.filter((r) => r.sym !== CASH).reduce((t, r) => t + Math.abs(r.deltaUsd), 0);
+  const k = total > 0 && Number.isFinite(feeUsd) ? (total - feeUsd) / total : 1;
   const units: Record<string, number> = {};
-  for (const r of rows) if (r.sym !== CASH && r.tgtUsd > EPS) units[r.sym] = r.tgtUsd / r.price;
-  return { total, rows, after: { cash: total * (inp.alloc[CASH] ?? 0) / 100, units }, missing };
+  for (const r of rows) if (r.sym !== CASH && r.tgtUsd > EPS) units[r.sym] = r.tgtUsd * k / r.price;
+  return { total, rows, after: { cash: total * (inp.alloc[CASH] ?? 0) / 100 * k, units }, missing, fee: Number.isFinite(feeUsd) ? feeUsd : 0 };
 }
 
 // ---------- valuation / simulation ----------
@@ -159,4 +170,74 @@ export function simulate(signals: Signal[], book: PriceBook, today: string): Sim
 export function benchmark(book: PriceBook, sym: string, start: string, days: string[]) {
   const base = priceOn(book, sym, start);
   return days.map((d) => ret(priceOn(book, sym, d), base));
+}
+
+// ---------- statistics ----------
+export interface RiskStats { days: number; total: number; vol: number; sharpe: number; sortino: number; maxDD: number; }
+/** Daily returns → total return, annualised volatility (365 days), Sharpe and Sortino (risk-free 0), max drawdown. */
+export function riskStats(rs: number[]): RiskStats {
+  const n = rs.length;
+  let idx = 1, peak = 1, maxDD = 0;
+  for (const r of rs) { idx *= 1 + r; peak = Math.max(peak, idx); maxDD = Math.min(maxDD, idx / peak - 1); }
+  const mean = n ? rs.reduce((a, b) => a + b, 0) / n : 0;
+  const sd = n > 1 ? Math.sqrt(rs.reduce((a, r) => a + (r - mean) ** 2, 0) / (n - 1)) : NaN;
+  const down = n > 1 ? Math.sqrt(rs.reduce((a, r) => a + Math.min(r, 0) ** 2, 0) / n) : NaN;
+  const ann = Math.sqrt(365);
+  return { days: n, total: idx - 1, vol: sd * ann, sharpe: sd > 0 ? (mean * 365) / (sd * ann) : NaN, sortino: down > 0 ? (mean * 365) / (down * ann) : NaN, maxDD };
+}
+
+/** Compounded return per calendar month ('YYYY-MM') and per year ('YYYY'). */
+export function periodReturns(dates: string[], rs: number[]) {
+  const months = new Map<string, number>(), years = new Map<string, number>();
+  dates.forEach((d, i) => {
+    const m = d.slice(0, 7), y = d.slice(0, 4);
+    months.set(m, (months.get(m) ?? 1) * (1 + rs[i]));
+    years.set(y, (years.get(y) ?? 1) * (1 + rs[i]));
+  });
+  const out = (mp: Map<string, number>) => new Map([...mp].map(([k, v]) => [k, v - 1]));
+  return { months: out(months), years: out(years) };
+}
+
+// ---------- cost basis ----------
+export interface Position { units: number; cost: number; realized: number; realizedByYear: Record<string, number>; }
+export type Positions = Record<string, Position>;   // key 'SDCA:BTC' or 'RSPS:SOL'
+
+/** Average-cost basis per strategy and coin, replayed from the signals at their execution prices. Coins that appear
+ *  without a trade (typed-in holdings) are taken in at that day's execution price; ones that disappear leave at
+ *  their average cost (no P/L). Realized P/L = sell value − average cost, after fees. */
+export function costBasis(signals: Signal[], book: PriceBook): Positions {
+  const pos: Positions = {};
+  const P = (k: string) => (pos[k] ??= { units: 0, cost: 0, realized: 0, realizedByYear: {} });
+  const add = (k: string, units: number, cost: number) => { const p = P(k); p.units += units; p.cost += cost; };
+  const remove = (k: string, units: number, proceeds: number | null, year: string) => {
+    const p = P(k); if (p.units <= EPS) return;
+    const u = Math.min(units, p.units), basis = p.cost * (u / p.units);
+    p.units -= u; p.cost -= basis;
+    if (proceeds !== null) { const pl = proceeds * (u / units) - basis; p.realized += pl; p.realizedByYear[year] = (p.realizedByYear[year] ?? 0) + pl; }
+    if (p.units <= EPS) { p.units = 0; p.cost = 0; }
+  };
+  for (const sig of [...signals].sort((a, b) => a.date.localeCompare(b.date))) {
+    const prev = addDays(sig.date, -1), year = sig.date.slice(0, 4);
+    const pe = (s: string) => sig.px?.[s] ?? priceOn(book, s, prev);
+    const fee = sig.fee ?? 0;
+    // holdings typed in vs what the replay holds → transfers in / out
+    const adjust = (k: string, typed: number, price: number) => {
+      const d = typed - (pos[k]?.units ?? 0);
+      if (d > EPS) add(k, d, d * price); else if (d < -EPS) remove(k, -d, null, year);
+    };
+    adjust('SDCA:BTC', sig.sdca.btc, pe('BTC'));
+    const rspsSyms = new Set([...Object.keys(sig.rsps.units), ...Object.keys(pos).filter((k) => k.startsWith('RSPS:')).map((k) => k.slice(5))]);
+    for (const s of rspsSyms) adjust(`RSPS:${s}`, sig.rsps.units[s] ?? 0, pe(s));
+    const ex = executeSignal(sig, pe);
+    if (ex.order.side === 'buy') add('SDCA:BTC', ex.order.btc, ex.order.usd);
+    if (ex.order.side === 'sell') remove('SDCA:BTC', ex.order.btc, ex.order.usd, year);
+    if (ex.plan) {
+      for (const s of new Set([...Object.keys(sig.rsps.units), ...Object.keys(ex.rsps.units)])) {
+        const d = (ex.rsps.units[s] ?? 0) - (sig.rsps.units[s] ?? 0);
+        if (d > EPS) add(`RSPS:${s}`, d, d * pe(s) / (1 - fee || 1));
+        else if (d < -EPS) remove(`RSPS:${s}`, -d, -d * pe(s) * (1 - fee), year);
+      }
+    }
+  }
+  return pos;
 }

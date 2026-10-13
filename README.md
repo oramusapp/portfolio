@@ -92,6 +92,21 @@ więc przetrwają odświeżenie i restart przeglądarki. Cała historia jest odt
   Cash (waluty), Bank accounts i Assets (nieruchomości, auta itp.), z sumą, podsumami i udziałem procentowym. Wszystkie kwoty w jednej walucie wybranej u góry (USD/PLN/EUR, bez przeliczania).
 - **Price chart**: dzienne zamknięcia wybranego tokena z ostatnich 365 dni + cena bieżąca.
 
+## Statystyki, opłaty, wpłaty
+
+- **Wykres Portfolio performance**: przełącznik *Total / SDCA / RSPS* pokazuje całość albo jedną strategię względem benchmarków.
+- **Statistics**: *Risk* — zwrot, max drawdown, zmienność roczna, Sharpe i Sortino (365 dni, stopa wolna od ryzyka 0) dla portfela,
+  SDCA, RSPS, BTC i SOL; *Monthly / yearly* — wyniki w każdym miesiącu i roku.
+- **Opłaty** (opcjonalnie): Ustawienia → *Trading fees*, % od wartości każdej transakcji; zapisywane razem z sygnałem.
+  W RSPS opłata od obrotu jest pomniejszana proporcjonalnie z nowych pozycji.
+- **Minimalne kupno SDCA**: 1% rezerwy gotówki SDCA.
+- **Wpłaty / wypłaty**: Portfolio holdings → *Deposit / Withdraw* (SDCA lub RSPS) — zmienia gotówkę strategii i liczy się jako wpłata,
+  nie zysk (*Portfolio gains* = wartość / suma wpłat netto − 1).
+- **Średnia cena zakupu i zrealizowany P/L** (podgląd Portfolio): metoda średniego kosztu, z sygnałów po cenach realizacji, po opłatach, w USD —
+  pomocniczo, np. do PIT-38 (trzeba przeliczyć po kursie urzędowym; to nie jest porada podatkowa).
+- **Historia Net worth**: każdy zapis tworzy punkt dnia (ostatni zapis dnia wygrywa); wykres od drugiego punktu.
+- **Przypomnienie o backupie**: gdy od ostatniego eksportu minęło 30 dni, na górze pojawia się *Time for a backup* (*Later* = za 7 dni).
+
 ## Założenia
 
 - Zlecenia w formularzu liczą się na cenach live z Hyperliquid (odświeżanie co 10 s i od razu po powrocie do aplikacji; formularz pokazuje, ile sekund temu ceny były aktualizowane, i ostrzega, gdy dłużej niż 45 s nie ma nowych). Zapis sygnału zapisuje te ceny jako ceny

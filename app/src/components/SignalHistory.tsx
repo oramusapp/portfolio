@@ -30,6 +30,7 @@ export function SdcaOrderView({ o, live }: { o: SdcaOrder; live?: boolean }) {
           <div className="dim small">{+(o.pct * 100).toFixed(4)}% of the BTC held ({btcAmt(o.after.btc + o.btc)} BTC) · BTC {price(o.price)} ({when})</div>
         </>
       )}
+      {o.fee > 0 && <div className="dim small">Fee ≈ {usd(o.fee, 2)} (included)</div>}
       <div className="dim small">After: cash {usd(o.after.cash, 2)} · BTC {btcAmt(o.after.btc)} · SDCA part {usd(o.value, 2)}</div>
     </div>
   );
@@ -64,7 +65,8 @@ export function RebalanceView({ p, live }: { p: RebalancePlan; live?: boolean })
           </table>
         )}
       {sells.length > 0 && buys.length > 0 && <div className="dim small">Sell first, then buy with the proceeds.</div>}
-      <div className="cash-line">{emojiOf(CASH)} Cash: {usd(cash.curUsd, 2)} → <b>{usd(cash.tgtUsd, 2)}</b> <span className="dim">({cash.tgtPct.toFixed(1)}% of RSPS)</span></div>
+      <div className="cash-line">{emojiOf(CASH)} Cash: {usd(cash.curUsd, 2)} → <b>{usd(p.after.cash, 2)}</b> <span className="dim">({cash.tgtPct.toFixed(1)}% of RSPS)</span></div>
+      {p.fee > 0 && <div className="dim small">Fees ≈ {usd(p.fee, 2)} — taken proportionally from the new holdings.</div>}
       {p.missing.length > 0 && <div className="warn small">Missing price: {p.missing.join(', ')}</div>}
     </div>
   );

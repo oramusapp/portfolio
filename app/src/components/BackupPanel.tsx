@@ -18,6 +18,13 @@ async function saveFile(name: string, text: string) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
+/** Exports everything to a file and remembers when (for the monthly backup prompt). */
+export async function exportNow() {
+  const day = new Date().toISOString().slice(0, 10);
+  await saveFile(`portfolio-backup-${day}.json`, JSON.stringify(exportBackup(), null, 1));
+  writeKey('pp.backup.last', JSON.stringify(Date.now()));
+}
+
 function restore(e: ArchiveEntry) {
   if (e.key === '*') {
     importBackup({ app: 'portfolio-performance', schema: SCHEMA_VERSION, created: new Date(e.time).toISOString(), data: JSON.parse(e.data) as Record<string, string> });
@@ -50,8 +57,7 @@ export function BackupSection() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const doExport = async () => {
-    const day = new Date().toISOString().slice(0, 10);
-    await saveFile(`portfolio-backup-${day}.json`, JSON.stringify(exportBackup(), null, 1));
+    await exportNow();
     setMsg({ ok: true, text: 'Backup file created. Keep it somewhere outside the phone (e.g. cloud drive).' });
   };
   const doImport = async (f: File | undefined) => {

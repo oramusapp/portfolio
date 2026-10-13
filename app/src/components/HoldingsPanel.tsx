@@ -8,10 +8,18 @@ import { IcClose } from './icons';
 
 export interface Holdings { sdca: SdcaState; rsps: RspsState; updatedAt: number; }
 
-interface Props { initial: Holdings; book: PriceBook; today: string; onNeed: (syms: string[]) => void; onSave: (h: Holdings) => void; onClose: () => void; }
+export interface Flow { id: string; time: number; strategy: 'sdca' | 'rsps'; amount: number; }   // + deposit, − withdrawal (USD)
+interface Props {
+  initial: Holdings; book: PriceBook; today: string; onNeed: (syms: string[]) => void; onSave: (h: Holdings) => void; onClose: () => void;
+  flows: Flow[]; onFlow: (f: Flow) => void;
+}
 
 /** Current portfolio state per strategy; values are computed from the live price (open daily candle). */
-export function HoldingsPanel({ initial, book, today, onNeed, onSave, onClose }: Props) {
+export function HoldingsPanel({ initial, book, today, onNeed, onSave, onClose, flows, onFlow }: Props) {
+  const [flowOpen, setFlowOpen] = useState(false);
+  const [flowStrat, setFlowStrat] = useState<'sdca' | 'rsps'>('sdca');
+  const [flowSide, setFlowSide] = useState<'in' | 'out'>('in');
+  const [flowAmt, setFlowAmt] = useState('');
   const [btc, setBtc] = useState(String(+initial.sdca.btc.toFixed(8)));
   const [sdcaCash, setSdcaCash] = useState(String(+initial.sdca.cash.toFixed(2)));
   const [units, setUnits] = useState<Pair[]>(toPairs(initial.rsps.units));
@@ -63,6 +71,38 @@ export function HoldingsPanel({ initial, book, today, onNeed, onSave, onClose }:
         </div>
 
         <div className="total-row"><span className="dim">Total portfolio</span><b>{usd(sdcaTotal + rspsTotal, 2)}</b></div>
+
+        <div className="card pane">
+          <div className="pane-head">
+            <h3>Deposits &amp; withdrawals</h3>
+            {!flowOpen && <button className="btn ghost small" onClick={() => setFlowOpen(true)}>Deposit / Withdraw</button>}
+          </div>
+          <div className="dim small">Money added to or taken from a strategy's cash. It changes the cash at once and counts as a deposit / withdrawal, not as profit or loss.</div>
+          {flowOpen && (() => {
+            const amt = n(flowAmt), cashNow = flowStrat === 'sdca' ? initial.sdca.cash : initial.rsps.cash;
+            const err = !(amt > 0) ? 'Enter an amount.' : flowSide === 'out' && amt > cashNow + 1e-9 ? `Only ${usd(cashNow, 2)} cash in ${flowStrat.toUpperCase()}.` : null;
+            return (
+              <div className="flow-form">
+                <div className="seg"><button className={flowStrat === 'sdca' ? 'on' : ''} onClick={() => setFlowStrat('sdca')}>SDCA</button><button className={flowStrat === 'rsps' ? 'on' : ''} onClick={() => setFlowStrat('rsps')}>RSPS</button></div>
+                <div className="seg"><button className={flowSide === 'in' ? 'on pos' : ''} onClick={() => setFlowSide('in')}>Deposit</button><button className={flowSide === 'out' ? 'on neg' : ''} onClick={() => setFlowSide('out')}>Withdraw</button></div>
+                <div className="field"><input inputMode="decimal" placeholder="0" value={flowAmt} onChange={(e) => setFlowAmt(e.target.value)} /><span className="unit">USD</span></div>
+                {flowAmt && err && <div className="warn small">{err}</div>}
+                <div className="modal-foot">
+                  <button className="btn ghost small" onClick={() => { setFlowOpen(false); setFlowAmt(''); }}>Cancel</button>
+                  <button className="btn gold small" disabled={!!err} onClick={() => onFlow({ id: `${Date.now()}`, time: Date.now(), strategy: flowStrat, amount: flowSide === 'in' ? amt : -amt })}>Apply</button>
+                </div>
+              </div>
+            );
+          })()}
+          {flows.length > 0 && (
+            <table className="mini">
+              <tbody>{[...flows].reverse().slice(0, 8).map((f) => (
+                <tr key={f.id}><td className="dim">{new Date(f.time).toLocaleDateString()}</td><td>{f.strategy.toUpperCase()}</td>
+                  <td className={`r ${f.amount >= 0 ? 'pos' : 'neg'}`}>{f.amount >= 0 ? '+' : '−'}{usd(Math.abs(f.amount), 2)}</td></tr>
+              ))}</tbody>
+            </table>
+          )}
+        </div>
         {bad && <ul className="errors"><li>Amounts must be numbers ≥ 0.</li></ul>}
         <div className="modal-foot">
           <button className="btn ghost" onClick={onClose}>Cancel</button>

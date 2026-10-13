@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { LineChart } from './LineChart';
 import { n } from './SignalForm';
 import { IcPlus, IcTrash } from './icons';
 
@@ -22,7 +23,23 @@ const COLORS: Record<Category, string> = { crypto: 'var(--accent)', stocks: 'var
 const money = (v: number, cur: string) =>
   Number.isFinite(v) ? `${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}` : '—';
 
-export function NetWorthPanel({ initial, onSave, onClose }: { initial: NetWorth; onSave: (w: NetWorth) => void; onClose: () => void }) {
+export interface NetWorthSnapshot { date: string; currency: string; total: number; byCat: Partial<Record<Category, number>>; }
+
+/** Total over time from the snapshots taken on each save (one per day, the last save of the day wins). */
+function History({ history, currency }: { history: NetWorthSnapshot[]; currency: string }) {
+  const pts = history.filter((h) => h.currency === currency).sort((a, b) => a.date.localeCompare(b.date));
+  if (pts.length < 2) return <div className="dim small">History: a point is saved each day you press Save{pts.length ? ` (1 so far)` : ''}; the chart appears from the second one.</div>;
+  const first = pts[0].total, lastV = pts[pts.length - 1].total;
+  return (
+    <div className="nw-history">
+      <div className="dim small">History ({currency}) · since {pts[0].date}: <span className={lastV >= first ? 'pos' : 'neg'}>{lastV >= first ? '+' : ''}{money(lastV - first, currency)}{first > 0 ? ` (${(((lastV / first) - 1) * 100).toFixed(1)}%)` : ''}</span></div>
+      <LineChart dates={pts.map((p) => p.date)} lines={[{ key: 'nw', label: 'Net worth', color: 'var(--accent)', values: pts.map((p) => p.total), area: true }]}
+        fmtY={(v) => v.toLocaleString('en-US', { notation: 'compact', maximumFractionDigits: 1 })} fmtTip={(v) => money(v, currency)} height={200} legend={false} />
+    </div>
+  );
+}
+
+export function NetWorthPanel({ initial, onSave, onClose, history }: { initial: NetWorth; onSave: (w: NetWorth) => void; onClose: () => void; history: NetWorthSnapshot[] }) {
   const [currency, setCurrency] = useState(initial.currency);
   const [rows, setRows] = useState<Row[]>(initial.items.map((i) => ({ cat: i.cat, name: i.name, v: String(i.amount) })));
 
@@ -45,6 +62,7 @@ export function NetWorthPanel({ initial, onSave, onClose }: { initial: NetWorth;
           </select>
         </div>
 
+        <History history={history} currency={currency} />
         <div className="nw-total">
           <div className="total-row"><span className="dim">Total</span><b>{money(total, currency)}</b></div>
           {total > 0 && (

@@ -269,3 +269,11 @@ details.archive summary h3 { margin: 0; }
 .note-text:focus { outline: none; }
 .note-text::placeholder { color: var(--dim); }
 .seg.tabs button.on { background: var(--accent); color: var(--accent-ink); }
+
+/* deposits / withdrawals, statistics, net worth history */
+.flow-form { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.flow-form .field { width: 100%; max-width: 280px; }
+table.mini.stats td, table.mini.stats th { font-size: 14px; padding: 8px 10px; }
+table.mini.stats tr.year-row td { background: var(--surface-2); }
+.nw-history { display: flex; flex-direction: column; gap: 4px; }
+.panel-head .checks .seg button { padding: 6px 12px; font-size: 13px; }

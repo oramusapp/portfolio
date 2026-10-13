@@ -15,13 +15,16 @@ const toDraft = (r: Reminder): Draft => ({
 });
 
 interface Props {
-  theme: Theme; setTheme: (t: Theme) => void;
+  theme: Theme; setTheme: (t: Theme) => void; feePct: number; setFeePct: (v: number) => void;
   reminders: Reminder[]; saveReminder: (r: Reminder) => void; deleteReminder: (r: Reminder) => void;
   onClose: () => void;
 }
 
-export function SettingsPanel({ theme, setTheme, reminders, saveReminder, deleteReminder, onClose }: Props) {
+export function SettingsPanel({ theme, setTheme, feePct, setFeePct, reminders, saveReminder, deleteReminder, onClose }: Props) {
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [fee, setFee] = useState(feePct ? String(feePct) : '');
+  const feeNum = fee.trim() === '' ? 0 : Number(fee.replace(',', '.'));
+  const feeErr = !(feeNum >= 0 && feeNum < 5);
   const today = localToday();
   const dayNum = Number(draft?.day);
   const err = !draft ? null
@@ -57,6 +60,16 @@ export function SettingsPanel({ theme, setTheme, reminders, saveReminder, delete
             <button className={theme === 'dark' ? 'on' : ''} onClick={() => setTheme('dark')}>Dark (OLED)</button>
             <button className={theme === 'light' ? 'on' : ''} onClick={() => setTheme('light')}>Light</button>
           </div>
+        </section>
+
+        <section className="set-sec">
+          <h3>Trading fees <span className="dim small">(optional)</span></h3>
+          <div className="dim small">Taken from each SDCA and RSPS trade of new signals. Leave empty for no fees. Older signals keep the fee they were saved with.</div>
+          <div className="field" style={{ maxWidth: 260 }}>
+            <input inputMode="decimal" placeholder="0" value={fee} onChange={(e) => setFee(e.target.value)} onBlur={() => { if (!feeErr) setFeePct(feeNum); }} />
+            <span className="unit">% per trade</span>
+          </div>
+          {feeErr ? <div className="warn small">Enter a number from 0 to 5.</div> : feeNum !== feePct ? <button className="btn gold small" style={{ alignSelf: 'flex-start' }} onClick={() => setFeePct(feeNum)}>Save fee</button> : null}
         </section>
 
         <section className="set-sec">

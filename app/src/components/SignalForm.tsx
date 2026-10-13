@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { allocError, rebalance, sdcaOrder, type Signal } from '../lib/engine';
+import { MIN_SDCA_BUY_PCT, allocError, rebalance, sdcaOrder, type Signal } from '../lib/engine';
 import { priceOn, type PriceBook } from '../lib/prices';
 import { ALL_ASSETS, CASH, TOKENS, emojiOf } from '../lib/tokens';
 import { addDays } from '../lib/utc';
@@ -9,7 +9,7 @@ import { IcClose, IcPlus, IcTrash } from './icons';
 
 interface Props {
   date: string; initial: Signal; book: PriceBook; editingExisting: boolean;
-  onNeed: (syms: string[]) => void; onSave: (s: Signal) => void; onClose: () => void; today: string; liveAt: number | null;
+  onNeed: (syms: string[]) => void; onSave: (s: Signal) => void; onClose: () => void; today: string; liveAt: number | null; feePct: number;
 }
 
 const fmtUnits = (v: number) => (v >= 1000 ? v.toLocaleString('en-US', { maximumFractionDigits: 2 }) : v.toLocaleString('en-US', { maximumFractionDigits: 8 }));
@@ -44,7 +44,9 @@ export function PairRows({ rows, setRows, options, unit, placeholder, extra }: {
   );
 }
 
-export function SignalForm({ date, initial, book, editingExisting, onNeed, onSave, onClose, today, liveAt }: Props) {
+export function SignalForm({ date, initial, book, editingExisting, onNeed, onSave, onClose, today, liveAt, feePct }: Props) {
+  // fee: today's signal uses the setting, an older one keeps the fee it was saved with
+  const fee = date === today ? feePct / 100 : initial.fee ?? 0;
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, []);
   const [side, setSide] = useState<'buy' | 'sell'>(initial.sdca.pct < 0 ? 'sell' : 'buy');
@@ -72,12 +74,13 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
   const rspsInput = { alloc: allocRec, cash: n(rspsCash), units: unitsRec };
 
   const btcPx = px('BTC');
-  const order = useMemo(() => (Number.isFinite(btcPx) ? sdcaOrder(sdcaInput, btcPx) : null), [btcPx, side, sdcaPct, sdcaCash, sdcaBtc]); // eslint-disable-line react-hooks/exhaustive-deps
-  const plan = rebalance(rspsInput, px);
+  const order = useMemo(() => (Number.isFinite(btcPx) ? sdcaOrder(sdcaInput, btcPx, fee) : null), [btcPx, side, sdcaPct, sdcaCash, sdcaBtc, fee]); // eslint-disable-line react-hooks/exhaustive-deps
+  const plan = rebalance(rspsInput, px, fee);
   const sum = alloc.reduce((s, r) => s + n(r.v), 0);
 
   const errors: string[] = [];
   if (sdcaNew && (!Number.isFinite(pctNum) || pctNum < 0 || pctNum > 100)) errors.push('SDCA signal must be between 0% and 100%.');
+  if (sdcaNew && side === 'buy' && pctNum > 0 && pctNum < MIN_SDCA_BUY_PCT) errors.push(`Minimum SDCA buy is ${MIN_SDCA_BUY_PCT}% of the SDCA cash reserve.`);
   if (!(sdcaInput.cash >= 0) || !(sdcaInput.btc >= 0)) errors.push('SDCA cash and BTC must be ≥ 0.');
   if (!(rspsInput.cash >= 0) || Object.values(unitsRec).some((v) => !(v >= 0))) errors.push('RSPS holdings must be ≥ 0.');
   const ae = rspsNew ? allocError(allocRec) : null; if (ae) errors.push(`RSPS: ${ae}`);
@@ -92,7 +95,7 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
     const used = ['BTC', ...Object.keys(allocRec), ...Object.keys(unitsRec)].filter((k) => k !== CASH);
     const snapshot = Object.fromEntries(used.map((k) => [k, px(k)]).filter(([, v]) => Number.isFinite(v as number)));
     onSave({
-      date, createdAt: Date.now(), px: snapshot, sdcaNew, rspsNew,
+      date, createdAt: Date.now(), px: snapshot, sdcaNew, rspsNew, fee,
       sdca: sdcaNew ? sdcaInput : { ...sdcaInput, pct: 0 },
       rsps: { alloc: rspsNew ? Object.fromEntries(Object.entries(allocRec).filter(([, v]) => v > 0)) : initial.rsps.alloc, cash: rspsInput.cash, units: unitsRec }
     });

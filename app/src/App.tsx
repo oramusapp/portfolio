@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { benchmark, executeSignal, simulate, type Signal } from './lib/engine';
+import { benchmark, costBasis, executeSignal, simulate, type Signal } from './lib/engine';
+import { StatsCard } from './components/StatsCard';
+import { exportNow } from './components/BackupPanel';
 import { priceOn } from './lib/prices';
 import { usePersisted, archive, SAVE_FAILED } from './lib/storage';
 import { applyTheme } from './lib/theme';
@@ -17,8 +19,8 @@ import { SignalHistory } from './components/SignalHistory';
 import { SignalForm } from './components/SignalForm';
 import { PriceChart, PRICE_DAYS } from './components/PriceChart';
 import { Footer } from './components/Footer';
-import { HoldingsPanel, type Holdings } from './components/HoldingsPanel';
-import { NetWorthPanel, type NetWorth } from './components/NetWorthPanel';
+import { HoldingsPanel, type Holdings, type Flow } from './components/HoldingsPanel';
+import { NetWorthPanel, CATEGORIES, type NetWorth, type NetWorthSnapshot } from './components/NetWorthPanel';
 import { CornerPanel, type CornerTab } from './components/CornerPanel';
 import { NotesTab, type Note } from './components/Notes';
 import { PortfolioView } from './components/PortfolioView';
@@ -65,6 +67,12 @@ export default function App() {
   const [theme, setTheme] = usePersisted<'dark' | 'light'>('theme', 'dark');
   useEffect(() => { applyTheme(theme); }, [theme]);
   const [portfolioOpen, setPortfolioOpen] = useState(false);
+  const [feePct, setFeePct] = usePersisted<number>('settings.feePct', 0);   // optional trading fee, % of each trade
+  const [flows, setFlows] = usePersisted<Flow[]>('flows', []);
+  const [series, setSeries] = usePersisted<'total' | 'sdca' | 'rsps'>('chart.series', 'total');
+  const [nwHistory, setNwHistory] = usePersisted<NetWorthSnapshot[]>('networth.history', []);
+  const [lastBackup] = usePersisted<number>('backup.last', 0);
+  const [backupSnooze, setBackupSnooze] = usePersisted<number>('backup.snooze', 0);
   const [saveFailed, setSaveFailed] = useState(false);
   useEffect(() => { const on = () => setSaveFailed(true); window.addEventListener(SAVE_FAILED, on); return () => window.removeEventListener(SAVE_FAILED, on); }, []);
 
@@ -85,7 +93,8 @@ export default function App() {
 
   const lines: Line[] = [];
   if (sim) {
-    lines.push({ key: 'pf', label: 'Portfolio', color: 'var(--accent)', values: [0, ...rows.map((r) => r.totalGain)], glow: true, area: true });
+    const pick = series === 'sdca' ? (r: typeof rows[number]) => r.sdcaGain : series === 'rsps' ? (r: typeof rows[number]) => r.rspsGain : (r: typeof rows[number]) => r.totalGain;
+    lines.push({ key: 'pf', label: series === 'total' ? 'Portfolio' : series.toUpperCase(), color: 'var(--accent)', values: [0, ...rows.map(pick)], glow: true, area: true });
     const add = (sym: string, color: string) => lines.push({ key: sym, label: `${sym} buy & hold`, color, dashed: true, values: [0, ...benchmark(book, sym, sim.start, rows.map((r) => r.date))] });
     if (bench.BTC) add('BTC', BENCH_COLORS.BTC);
     if (bench.SOL) add('SOL', BENCH_COLORS.SOL);
@@ -124,6 +133,28 @@ export default function App() {
   // current holdings at live prices (the same numbers as the Portfolio view)
   const hSdca = holdings ? holdings.sdca.cash + holdings.sdca.btc * priceOn(book, 'BTC', today) : 0;
   const hRsps = holdings ? holdings.rsps.cash + Object.entries(holdings.rsps.units).reduce((t, [k, u]) => t + u * priceOn(book, k, today), 0) : 0;
+  // money put in: what the signals saw (typed-in vs carried) + deposits/withdrawals made since the last saved signal
+  const lastSigTime = signals.reduce((t, s) => Math.max(t, s.createdAt), 0);
+  const invested = (last?.invested ?? 0) + flows.filter((f) => f.time > lastSigTime).reduce((t, f) => t + f.amount, 0);
+  const valueNow = holdings ? hSdca + hRsps : last?.value ?? 0;
+  const positions = useMemo(() => costBasis(sorted, book), [sorted, book]);
+  const applyFlow = (f: Flow) => {
+    const base: Holdings = holdings ?? { sdca: sim?.sdca ?? { cash: 0, btc: 0 }, rsps: sim?.rsps ?? { cash: 0, units: {} }, updatedAt: 0 };
+    if (holdings) archive('pp.holdings', 'replaced', 'Portfolio holdings', holdings);
+    setHoldings({ ...base, [f.strategy]: { ...base[f.strategy], cash: base[f.strategy].cash + f.amount }, updatedAt: Date.now() });
+    setFlows((l) => [...l, f]);
+  };
+  const saveNetWorth = (w: NetWorth) => {
+    if (netWorth.items.length) archive('pp.networth', 'replaced', 'Net worth', netWorth);
+    setNetWorth(w);
+    const d = new Date(), date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const byCat = Object.fromEntries(CATEGORIES.map((c) => [c.id, w.items.filter((i) => i.cat === c.id).reduce((t, i) => t + i.amount, 0)]));
+    const snap: NetWorthSnapshot = { date, currency: w.currency, total: w.items.reduce((t, i) => t + i.amount, 0), byCat };
+    setNwHistory((h) => [...h.filter((x) => !(x.date === date && x.currency === w.currency)), snap]);
+    setNetWorthOpen(false);
+  };
+  const hasData = signals.length > 0 || notes.length > 0 || netWorth.items.length > 0 || !!holdings;
+  const backupDue = hasData && now - lastBackup > 30 * 86_400_000 && now > backupSnooze;
   const extraOptions = TOKENS.map((t) => t.sym).filter((s) => s !== 'BTC' && s !== 'SOL' && !bench.extra.includes(s));
   const errList = Object.entries(errors);
 
@@ -140,13 +171,25 @@ export default function App() {
 
       <RemindersDue reminders={reminders} onDone={(r, on) => setReminders((l) => l.map((x) => (x.id === r.id ? { ...x, doneFor: on } : x)))} />
 
-      <Kpis value={holdings ? hSdca + hRsps : last?.value ?? 0} strategy={last?.totalGain ?? NaN} btc={btcBh} sdcaValue={holdings ? hSdca : last?.sdcaValue ?? 0} rspsValue={holdings ? hRsps : last?.rspsValue ?? 0} onOpenPortfolio={() => setPortfolioOpen(true)}
-        gains={last && last.invested > 0 ? last.value / last.invested - 1 : NaN} />
+      {backupDue && (
+        <div className="card rem-card">
+          <div className="rem-main"><b>Time for a backup</b>
+            <div className="dim small">{lastBackup ? `Last backup ${new Date(lastBackup).toLocaleDateString()}.` : 'No backup yet.'} Your data lives only on this device — export it and keep the file somewhere else.</div></div>
+          <button className="btn ghost small" onClick={() => setBackupSnooze(Date.now() + 7 * 86_400_000)}>Later</button>
+          <button className="btn gold small" onClick={() => void exportNow()}>Export now</button>
+        </div>
+      )}
+
+      <Kpis value={valueNow} strategy={last?.totalGain ?? NaN} btc={btcBh} sdcaValue={holdings ? hSdca : last?.sdcaValue ?? 0} rspsValue={holdings ? hRsps : last?.rspsValue ?? 0} onOpenPortfolio={() => setPortfolioOpen(true)}
+        gains={invested > 0 ? valueNow / invested - 1 : NaN} />
 
       <section className="card panel">
         <div className="panel-head">
           <h2>Portfolio performance (%)</h2>
           <div className="checks">
+            <div className="seg">
+              {(['total', 'sdca', 'rsps'] as const).map((k) => <button key={k} className={series === k ? 'on' : ''} onClick={() => setSeries(k)}>{k === 'total' ? 'Total' : k.toUpperCase()}</button>)}
+            </div>
             <label className="check amber"><input type="checkbox" checked={bench.BTC} onChange={(e) => setBench({ ...bench, BTC: e.target.checked })} /><span />BTC benchmark</label>
             <label className="check purple"><input type="checkbox" checked={bench.SOL} onChange={(e) => setBench({ ...bench, SOL: e.target.checked })} /><span />SOL benchmark</label>
             {bench.extra.map((s) => (
@@ -162,6 +205,8 @@ export default function App() {
           ? <LineChart dates={dates} lines={lines} markers={markers} zeroLine fmtY={(v) => pct(v, Number.isInteger(Math.round(v * 1e6) / 1e4) ? 0 : 1)} fmtTip={(v) => pct(v, 2)} liveLast />
           : <div className="empty">{loading ? 'Loading prices…' : 'Add your first signal to start tracking performance.'}</div>}
       </section>
+
+      <StatsCard rows={rows} book={book} />
 
       {errList.length > 0 && <div className="warn small">Price data unavailable: {errList.map(([s, e]) => `${s} (${e})`).join('; ')}</div>}
 
@@ -181,20 +226,20 @@ export default function App() {
         <img src="./networth-icon.png" alt="" />
       </button>
       {netWorthOpen && <CornerPanel tab={cornerTab} setTab={setCornerTab} onClose={() => { setNotes((l) => l.filter((n) => n.text.trim())); setNetWorthOpen(false); }}
-        networth={<NetWorthPanel initial={netWorth} onSave={(w) => { if (netWorth.items.length) archive('pp.networth', 'replaced', 'Net worth', netWorth); setNetWorth(w); setNetWorthOpen(false); }} onClose={() => setNetWorthOpen(false)} />}
+        networth={<NetWorthPanel initial={netWorth} history={nwHistory} onSave={saveNetWorth} onClose={() => setNetWorthOpen(false)} />}
         notes={<NotesTab notes={notes} setNotes={setNotes} onDelete={(n) => { archive(`pp.notes#${n.id}`, 'deleted', `Note “${n.text.split('\n')[0].slice(0, 40)}”`, n); setNotes((l) => l.filter((x) => x.id !== n.id)); }} />} />}
 
-      {portfolioOpen && <PortfolioView today={today} book={book} onClose={() => setPortfolioOpen(false)}
+      {portfolioOpen && <PortfolioView today={today} book={book} positions={positions} onClose={() => setPortfolioOpen(false)}
         sdca={holdings?.sdca ?? sim?.sdca ?? { cash: 0, btc: 0 }} rsps={holdings?.rsps ?? sim?.rsps ?? { cash: 0, units: {} }} />}
-      {settingsOpen && <SettingsPanel theme={theme} setTheme={setTheme} reminders={reminders} saveReminder={saveReminder} deleteReminder={deleteReminder} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsPanel theme={theme} setTheme={setTheme} feePct={feePct} setFeePct={setFeePct} reminders={reminders} saveReminder={saveReminder} deleteReminder={deleteReminder} onClose={() => setSettingsOpen(false)} />}
       {saveFailed && <div className="update-banner"><div><b>Could not save</b><div className="dim small">The browser’s storage is full or blocked. Export a backup now.</div></div>
         <button className="btn gold small" onClick={() => { setSaveFailed(false); setSettingsOpen(true); }}>Backup</button></div>}
 
-      {holdingsOpen && <HoldingsPanel today={today} book={book} onNeed={setFormSyms}
+      {holdingsOpen && <HoldingsPanel key={holdings?.updatedAt ?? 0} today={today} book={book} onNeed={setFormSyms} flows={flows} onFlow={applyFlow}
         initial={holdings ?? { sdca: sim?.sdca ?? { cash: 0, btc: 0 }, rsps: sim?.rsps ?? { cash: 0, units: {} }, updatedAt: 0 }}
         onSave={(h) => { if (holdings) archive('pp.holdings', 'replaced', 'Portfolio holdings', holdings); setHoldings(h); setHoldingsOpen(false); setFormSyms([]); }} onClose={() => { setHoldingsOpen(false); setFormSyms([]); }} />}
 
-      {form && <SignalForm today={today} liveAt={liveAt} date={form.date} initial={form.initial} book={book} editingExisting={form.existing}
+      {form && <SignalForm feePct={feePct} today={today} liveAt={liveAt} date={form.date} initial={form.initial} book={book} editingExisting={form.existing}
         onNeed={setFormSyms} onSave={saveSignal} onClose={() => { setForm(null); setFormSyms([]); }} />}
     </div>
   );
