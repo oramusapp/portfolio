@@ -242,3 +242,30 @@ img { -webkit-user-drag: none; user-select: none; }
 details.archive summary { cursor: pointer; list-style: none; } details.archive summary::-webkit-details-marker { display: none; }
 details.archive summary h3::before { content: '▸ '; color: var(--dim); } details.archive[open] summary h3::before { content: '▾ '; }
 details.archive summary h3 { margin: 0; }
+
+/* corner window: Net worth / Notes tabs */
+.seg.tabs button { padding: 8px 18px; font-weight: 600; }
+.corner-modal.notes { min-height: min(78vh, 760px); }
+.grow { flex: 1; }
+
+/* notes (iPhone Notes style) */
+.notes, .note-editor { display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; }
+.notes-bar { display: flex; align-items: center; gap: 8px; }
+.notes-search { flex: 1; border-radius: 10px; padding: 9px 12px; background: var(--surface-2); }
+.notes-new { color: var(--accent); }
+.notes-group-title { font-size: 19px; font-weight: 700; margin: 4px 2px 6px; }
+.notes-list { display: flex; flex-direction: column; overflow: hidden; background: var(--surface-2); border-color: var(--line-2); }
+.note-row { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 11px 14px; background: none; border: 0; border-bottom: 1px solid var(--line-2); color: var(--text); font: inherit; cursor: pointer; }
+.note-row:last-child { border-bottom: 0; }
+.note-row:hover { background: var(--hover); }
+.note-row b { font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.note-row > span { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.note-time { color: var(--text); margin-right: 6px; }
+.notes-count { text-align: center; padding-top: 4px; }
+.note-back { display: inline-flex; align-items: center; gap: 2px; background: none; border: 0; color: var(--accent); font: inherit; font-size: 17px; cursor: pointer; padding: 4px 2px; }
+.icon.pinned { color: var(--accent); }
+.note-stamp { text-align: center; }
+.note-text { flex: 1; min-height: 52vh; width: 100%; resize: none; border: 0; outline: none; background: transparent; color: var(--text); font: 17px/1.5 var(--sans); padding: 4px 2px; }
+.note-text:focus { outline: none; }
+.note-text::placeholder { color: var(--dim); }
+.seg.tabs button.on { background: var(--accent); color: var(--accent-ink); }

@@ -19,6 +19,8 @@ import { PriceChart, PRICE_DAYS } from './components/PriceChart';
 import { Footer } from './components/Footer';
 import { HoldingsPanel, type Holdings } from './components/HoldingsPanel';
 import { NetWorthPanel, type NetWorth } from './components/NetWorthPanel';
+import { CornerPanel, type CornerTab } from './components/CornerPanel';
+import { NotesTab, type Note } from './components/Notes';
 import { PortfolioView } from './components/PortfolioView';
 
 const BENCH_COLORS: Record<string, string> = { BTC: 'var(--amber)', SOL: 'var(--cyan)' };
@@ -46,6 +48,8 @@ export default function App() {
   // Net worth across asset classes (bottom-right button), entered by hand.
   const [netWorth, setNetWorth] = usePersisted<NetWorth>('networth', { currency: 'USD', items: [], updatedAt: 0 });
   const [netWorthOpen, setNetWorthOpen] = useState(false);
+  const [cornerTab, setCornerTab] = usePersisted<CornerTab>('corner.tab', 'networth');
+  const [notes, setNotes] = usePersisted<Note[]>('notes', []);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [reminders, setReminders] = usePersisted<Reminder[]>('reminders', []);
   const dueCount = reminders.filter((r) => dueFor(r, localToday(new Date(now)))).length;
@@ -173,10 +177,12 @@ export default function App() {
 
       <Footer />
 
-      <button className="corner-btn" title="Net worth" aria-label="Net worth" onClick={() => setNetWorthOpen(true)}>
+      <button className="corner-btn" title="Net worth · Notes" aria-label="Net worth and notes" onClick={() => setNetWorthOpen(true)}>
         <img src="./networth-icon.png" alt="" />
       </button>
-      {netWorthOpen && <NetWorthPanel initial={netWorth} onSave={(w) => { if (netWorth.items.length) archive('pp.networth', 'replaced', 'Net worth', netWorth); setNetWorth(w); setNetWorthOpen(false); }} onClose={() => setNetWorthOpen(false)} />}
+      {netWorthOpen && <CornerPanel tab={cornerTab} setTab={setCornerTab} onClose={() => { setNotes((l) => l.filter((n) => n.text.trim())); setNetWorthOpen(false); }}
+        networth={<NetWorthPanel initial={netWorth} onSave={(w) => { if (netWorth.items.length) archive('pp.networth', 'replaced', 'Net worth', netWorth); setNetWorth(w); setNetWorthOpen(false); }} onClose={() => setNetWorthOpen(false)} />}
+        notes={<NotesTab notes={notes} setNotes={setNotes} onDelete={(n) => { archive(`pp.notes#${n.id}`, 'deleted', `Note “${n.text.split('\n')[0].slice(0, 40)}”`, n); setNotes((l) => l.filter((x) => x.id !== n.id)); }} />} />}
 
       {portfolioOpen && <PortfolioView today={today} book={book} onClose={() => setPortfolioOpen(false)}
         sdca={holdings?.sdca ?? sim?.sdca ?? { cash: 0, btc: 0 }} rsps={holdings?.rsps ?? sim?.rsps ?? { cash: 0, units: {} }} />}

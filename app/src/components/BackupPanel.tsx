@@ -5,6 +5,7 @@ const REASON: Record<ArchiveEntry['reason'], string> = {
   replaced: 'replaced', deleted: 'deleted', unreadable: 'unreadable', 'before-import': 'before import', 'before-migration': 'before update'
 };
 const SIGNAL_PREFIX = 'pp.signals#';
+const NOTE_PREFIX = 'pp.notes#';
 
 async function saveFile(name: string, text: string) {
   const blob = new Blob([text], { type: 'application/json' });
@@ -30,6 +31,13 @@ function restore(e: ArchiveEntry) {
     const cur = list.find((x) => x.date === sig.date);
     if (cur) archive(SIGNAL_PREFIX + sig.date, 'replaced', `Signal ${sig.date} (before restore)`, cur);
     writeKey('pp.signals', JSON.stringify([...list.filter((x) => x.date !== sig.date), sig]));
+    return;
+  }
+  if (e.key.startsWith(NOTE_PREFIX)) {
+    const note = JSON.parse(e.data) as { id: string };
+    let list: { id: string }[] = [];
+    try { list = JSON.parse(localStorage.getItem('pp.notes') ?? '[]'); } catch { /* unreadable list is archived on load */ }
+    writeKey('pp.notes', JSON.stringify([note, ...list.filter((x) => x.id !== note.id)]));
     return;
   }
   restoreValue(e.key, e.data, e.label);

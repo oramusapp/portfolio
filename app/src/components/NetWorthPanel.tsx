@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { n } from './SignalForm';
-import { IcClose, IcPlus, IcTrash } from './icons';
+import { IcPlus, IcTrash } from './icons';
 
 // Manually entered amounts across asset classes. All amounts are in one currency picked at the top (no conversion).
 export const CATEGORIES = [
@@ -37,17 +37,12 @@ export function NetWorthPanel({ initial, onSave, onClose }: { initial: NetWorth;
   };
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal narrow" onClick={(e) => e.stopPropagation()}>
+    <>
         <div className="modal-head">
-          <div><h2>Net worth</h2>
-            <div className="dim small">How much you hold in each asset class. Amounts are typed in by hand.</div></div>
-          <div className="field">
-            <select value={currency} onChange={(e) => setCurrency(e.target.value as NetWorth['currency'])}>
-              {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
-            </select>
-            <button className="icon" onClick={onClose}><IcClose /></button>
-          </div>
+          <div className="dim small">How much you hold in each asset class. Amounts are typed in by hand.</div>
+          <select value={currency} onChange={(e) => setCurrency(e.target.value as NetWorth['currency'])}>
+            {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
+          </select>
         </div>
 
         <div className="nw-total">
@@ -82,7 +77,6 @@ export function NetWorthPanel({ initial, onSave, onClose }: { initial: NetWorth;
           <button className="btn ghost" onClick={onClose}>Cancel</button>
           <button className="btn gold" disabled={bad} onClick={save}>Save</button>
         </div>
-      </div>
-    </div>
+    </>
   );
 }
