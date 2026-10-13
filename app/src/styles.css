@@ -284,3 +284,8 @@ table.mini.stats tr.year-row td { background: var(--surface-2); }
 .kpi-l { display: flex; align-items: center; gap: 6px; }
 .eye-btn { background: none; border: 0; padding: 4px; margin: -4px 0; color: var(--dim); cursor: pointer; display: inline-grid; place-items: center; border-radius: 6px; }
 .eye-btn:hover { color: var(--accent); background: var(--hover); }
+
+/* signal history paging */
+.hist-more { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
+.actions { align-items: center; }
+.check.opt-toggle { font-size: 14px; color: var(--dim); }

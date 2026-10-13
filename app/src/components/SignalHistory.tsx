@@ -1,8 +1,11 @@
 import { Fragment, useState } from 'react';
+import { usePersisted } from '../lib/storage';
 import type { DayRow, RebalancePlan, RebalanceRow, SdcaOrder, Signal } from '../lib/engine';
 import { CASH, emojiOf } from '../lib/tokens';
 import { num, pct, price, tone, usd } from '../lib/format';
 import { IcChevron, IcPen, IcPlus, IcTrash } from './icons';
+
+const PAGE = 10;   // history rows shown at a time
 
 export const allocText = (alloc: Record<string, number>) =>
   Object.entries(alloc).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1])
@@ -80,7 +83,12 @@ interface Props {
 export function SignalHistory({ rows, today, hasToday, resetIn, onAdd, onEdit, onDelete }: Props) {
   const [editing, setEditing] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
-  const list = [...rows].reverse();
+  // long histories: newest first, PAGE rows at a time, optionally only the days with a signal
+  const [signalsOnly, setSignalsOnly] = usePersisted<boolean>('history.signalsOnly', false);
+  const [shown, setShown] = useState(PAGE);
+  const all = [...rows].reverse().filter((r) => !signalsOnly || !r.duplicated);
+  const list = all.slice(0, shown);
+  const dupCount = rows.filter((r) => r.duplicated).length;
   return (
     <section className="history">
       <div className="history-head">
@@ -91,6 +99,7 @@ export function SignalHistory({ rows, today, hasToday, resetIn, onAdd, onEdit, o
           </div>
         </div>
         <div className="actions">
+          {dupCount > 0 && <label className="check opt-toggle"><input type="checkbox" checked={signalsOnly} onChange={(e) => { setSignalsOnly(e.target.checked); setShown(PAGE); }} /><span />Signals only</label>}
           <button className="btn gold" onClick={onAdd}><IcPlus width={18} />{hasToday ? 'Today’s Signal' : 'Add Signal'}</button>
           <button className={`btn ghost ${editing ? 'on' : ''}`} onClick={() => setEditing((e) => !e)}><IcPen width={17} />{editing ? 'Done' : 'Edit'}</button>
         </div>
@@ -99,7 +108,7 @@ export function SignalHistory({ rows, today, hasToday, resetIn, onAdd, onEdit, o
         <table className="hist">
           <thead><tr><th>DATE</th><th>ALLOCATION</th><th className="r">STRATEGY DAY</th><th className="r">BTC DAY</th><th className="r">TOTAL GAIN</th>{editing && <th />}</tr></thead>
           <tbody>
-            {!list.length && <tr><td colSpan={5} className="empty">No signals yet — press “Add Signal” to enter today’s SDCA and RSPS signal.</td></tr>}
+            {!list.length && <tr><td colSpan={5} className="empty">{rows.length ? 'No days with a new signal.' : 'No signals yet — press “Add Signal” to enter today’s SDCA and RSPS signal.'}</td></tr>}
             {list.map((r) => (
               <Fragment key={r.date}>
                 <tr className="row" onClick={() => setOpen(open === r.date ? null : r.date)}>
@@ -142,6 +151,14 @@ export function SignalHistory({ rows, today, hasToday, resetIn, onAdd, onEdit, o
           </tbody>
         </table>
       </div>
+      {all.length > PAGE && (
+        <div className="hist-more">
+          <span className="dim small">Showing {Math.min(shown, all.length)} of {all.length} days</span>
+          {shown < all.length && <button className="btn ghost small" onClick={() => setShown(shown + PAGE)}>Show {Math.min(PAGE, all.length - shown)} more</button>}
+          {shown < all.length && <button className="btn ghost small" onClick={() => setShown(all.length)}>Show all</button>}
+          {shown > PAGE && <button className="btn ghost small" onClick={() => setShown(PAGE)}>Show less</button>}
+        </div>
+      )}
     </section>
   );
 }
