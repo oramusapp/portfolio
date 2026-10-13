@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { sigId, type Signal } from '../lib/engine';
 import { SCHEMA_VERSION, exportBackup, importBackup, readArchive, archive, restoreValue, writeKey, type ArchiveEntry, type BackupFile } from '../lib/storage';
 
 const REASON: Record<ArchiveEntry['reason'], string> = {
@@ -32,12 +33,12 @@ function restore(e: ArchiveEntry) {
     return;
   }
   if (e.key.startsWith(SIGNAL_PREFIX)) {
-    const sig = JSON.parse(e.data) as { date: string };
-    let list: { date: string }[] = [];
+    const sig = JSON.parse(e.data) as Signal;
+    let list: Signal[] = [];
     try { list = JSON.parse(localStorage.getItem('pp.signals') ?? '[]'); } catch { /* unreadable list is archived on load */ }
-    const cur = list.find((x) => x.date === sig.date);
-    if (cur) archive(SIGNAL_PREFIX + sig.date, 'replaced', `Signal ${sig.date} (before restore)`, cur);
-    writeKey('pp.signals', JSON.stringify([...list.filter((x) => x.date !== sig.date), sig]));
+    const cur = list.find((x) => sigId(x) === sigId(sig));
+    if (cur) archive(SIGNAL_PREFIX + sigId(sig), 'replaced', `Signal ${sig.date} (before restore)`, cur);
+    writeKey('pp.signals', JSON.stringify([...list.filter((x) => sigId(x) !== sigId(sig)), sig]));
     return;
   }
   if (e.key.startsWith(NOTE_PREFIX)) {

@@ -89,3 +89,20 @@ describe('simulation', () => {
     expect(benchmark(book, 'BTC', '2026-01-01', ['2026-01-02', '2026-01-03'])).toEqual([expect.closeTo(0.1), expect.closeTo(-0.01)]);
   });
 });
+
+describe('several signals on one day', () => {
+  const book: PriceBook = { BTC: { '2026-01-01': 100, '2026-01-02': 120 } };
+  const base = { rsps: { alloc: { CASH: 100 }, cash: 0, units: {} } };
+  it('executes them in order and chains the day return through each execution', () => {
+    const a: Signal = { id: 'a', date: '2026-01-02', createdAt: 1, px: { BTC: 100 }, sdca: { pct: 50, cash: 1000, btc: 0 }, ...base };
+    const b: Signal = { id: 'b', date: '2026-01-02', createdAt: 2, px: { BTC: 110 }, sdca: { pct: 100, cash: 500, btc: 5 }, ...base };
+    const sim = simulate([b, a], book, '2026-01-02')!;
+    const row = sim.rows[0];
+    expect(row.execs.map((e) => e.signal.id)).toEqual(['a', 'b']);
+    expect(sim.sdca.cash).toBe(0);
+    expect(sim.sdca.btc).toBeCloseTo(5 + 500 / 110);
+    // 1000 → (500 cash + 5 BTC) → at 110: 1050 → all BTC → at 120: 1050 × 120/110
+    expect(row.rSdca).toBeCloseTo((1050 * 120 / 110) / 1000 - 1);
+    expect(row.invested).toBeCloseTo(1000);
+  });
+});

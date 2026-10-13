@@ -9,7 +9,7 @@ import { IcClose, IcPlus, IcTrash } from './icons';
 
 interface Props {
   date: string; initial: Signal; book: PriceBook; editingExisting: boolean;
-  onNeed: (syms: string[]) => void; onSave: (s: Signal) => void; onClose: () => void; today: string; liveAt: number | null; feePct: number;
+  onNeed: (syms: string[]) => void; onSave: (s: Signal) => void; onClose: () => void; today: string; liveAt: number | null; feePct: number; sameDay?: number;
 }
 
 const fmtUnits = (v: number) => (v >= 1000 ? v.toLocaleString('en-US', { maximumFractionDigits: 2 }) : v.toLocaleString('en-US', { maximumFractionDigits: 8 }));
@@ -44,7 +44,7 @@ export function PairRows({ rows, setRows, options, unit, placeholder, extra }: {
   );
 }
 
-export function SignalForm({ date, initial, book, editingExisting, onNeed, onSave, onClose, today, liveAt, feePct }: Props) {
+export function SignalForm({ date, initial, book, editingExisting, onNeed, onSave, onClose, today, liveAt, feePct, sameDay = 0 }: Props) {
   // fee: today's signal uses the setting, an older one keeps the fee it was saved with
   const fee = date === today ? feePct / 100 : initial.fee ?? 0;
   const [now, setNow] = useState(Date.now());
@@ -105,7 +105,8 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <div><h2>{editingExisting ? 'Edit signal' : 'New signal'} · {date}</h2>
+          <div><h2>{editingExisting ? 'Edit signal' : sameDay > 0 ? `Signal ${sameDay + 1} for today` : 'New signal'} · {date}</h2>
+            {!editingExisting && sameDay > 0 && <div className="small" style={{ color: 'var(--accent)' }}>Another signal today — it starts from the holdings after the previous one.</div>}
             <div className="dim small">{live ? 'Amounts follow live prices; saving stores them as the execution prices and updates Portfolio holdings.' : 'Uses the prices stored when this signal was saved.'} SDCA and RSPS are separate: each uses only its own cash and holdings.</div>
             {live && <div className={`live-dot ${liveAt && now - liveAt < 45_000 ? '' : 'stale'}`}>
               {liveAt ? (now - liveAt < 45_000 ? `Live prices · updated ${Math.max(0, Math.round((now - liveAt) / 1000))} s ago` : `Prices not updated for ${Math.round((now - liveAt) / 1000)} s — check the connection`) : 'Loading live prices…'}

@@ -75,6 +75,10 @@ więc przetrwają odświeżenie i restart przeglądarki. Cała historia jest odt
   aplikacja pokazuje dla każdego aktywa BUY/SELL w %, w $ i w sztukach. Formularz jest wstępnie wypełniony stanem przeniesionym z poprzedniego dnia.
 - **Okienko „New signal today”** osobno dla SDCA i RSPS: zaznaczone = wpisujesz sygnał; niezaznaczone = ta strategia zostaje bez zmian
   (bez zleceń, holdings bez zmian, w historii „SDCA dup” / „RSPS dup”). Gdy żadne nie jest zaznaczone, nic się nie zapisuje i dzień jest DUPLICATED.
+- **Kilka sygnałów jednego dnia**: po zapisaniu sygnału przycisk zmienia się na *Add another signal*. Każdy kolejny startuje z holdings po
+  poprzednim, wykonuje się po cenach z chwili zapisu, a wynik dnia jest liczony odcinkami (zamknięcie D-1 → sygnał 1 → sygnał 2 → … → zamknięcie D).
+  W historii dzień pokazuje „N signals”, a po rozwinięciu każdy sygnał osobno (edycja / usuwanie w trybie *Edit*). Edycja wcześniejszego sygnału
+  nie zmienia stanów wpisanych w późniejszych sygnałach tego dnia ani holdings.
 - **Reset dzienny**: o 00:00 UTC zaczyna się nowy dzień i trzeba wpisać nowy sygnał. Dni bez sygnału pojawiają się jako `DUPLICATED`
   z przeniesioną alokacją. Kliknięcie wiersza pokazuje zlecenia i wynik każdej strategii osobno. `Edit` pozwala poprawić lub usunąć sygnał.
 - **Ceny**: dzienne świece UTC z Hyperliquid (perpy; kPEPE/kSHIB przeliczane na 1 token), a Binance spot tylko jako zapas, gdy Hyperliquid nie odpowiada.

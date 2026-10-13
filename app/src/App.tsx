@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { benchmark, costBasis, executeSignal, simulate, type Signal } from './lib/engine';
+import { benchmark, bySignalOrder, costBasis, executeSignal, sigId, simulate, type Signal } from './lib/engine';
 import { StatsCard } from './components/StatsCard';
 import { exportNow } from './components/BackupPanel';
 import { priceOn } from './lib/prices';
@@ -77,7 +77,7 @@ export default function App() {
   const [saveFailed, setSaveFailed] = useState(false);
   useEffect(() => { const on = () => setSaveFailed(true); window.addEventListener(SAVE_FAILED, on); return () => window.removeEventListener(SAVE_FAILED, on); }, []);
 
-  const sorted = useMemo(() => [...signals].sort((a, b) => a.date.localeCompare(b.date)), [signals]);
+  const sorted = useMemo(() => [...signals].sort(bySignalOrder), [signals]);
   const first = sorted[0]?.date;
   const from = addDays(first && first < addDays(today, -PRICE_DAYS) ? first : addDays(today, -PRICE_DAYS), -3);
   const needed = [
@@ -107,10 +107,9 @@ export default function App() {
   const ms = msToReset(now);
   const resetIn = `${Math.floor(ms / 3_600_000)}h ${Math.floor((ms % 3_600_000) / 60_000)}m`;
 
+  // a new signal (today can have several): starts from the current holdings and the last allocation
   const openToday = () => {
-    const existing = sorted.find((s) => s.date === today);
-    if (existing) { setForm({ date: today, initial: existing, existing: true }); return; }
-    const prev = sorted.filter((s) => s.date < today).at(-1);
+    const prev = sorted.at(-1);
     // pre-fill with the carried-forward holdings of each strategy and the last allocation
     const base = holdings ?? (prev && sim ? { sdca: sim.sdca, rsps: sim.rsps } : null);
     const initial: Signal = base
@@ -118,11 +117,17 @@ export default function App() {
       : emptySignal(today);
     setForm({ date: today, initial, existing: false });
   };
-  const saveSignal = (s: Signal) => {
-    const old = signals.find((x) => x.date === s.date);
-    if (old) archive(`pp.signals#${s.date}`, 'replaced', `Signal ${s.date}`, old);
-    setSignals((list) => [...list.filter((x) => x.date !== s.date), s]);
-    if (s.date === today) {   // today's orders are executed: holdings move to the post-trade state (old state archived)
+  const saveSignal = (input: Signal) => {
+    const editing = form?.existing ? form.initial : null;
+    // an edited signal keeps its id and its place in the day's order; a new one gets a fresh id
+    const s: Signal = editing
+      ? { ...input, id: sigId(editing), createdAt: editing.createdAt }
+      : { ...input, id: `${input.date}-${Date.now().toString(36)}` };
+    const id = sigId(s);
+    if (editing) archive(`pp.signals#${id}`, 'replaced', `Signal ${s.date}`, editing);
+    setSignals((list) => [...list.filter((x) => sigId(x) !== id), s]);
+    const laterToday = signals.some((x) => x.date === s.date && sigId(x) !== id && x.createdAt > s.createdAt);
+    if (s.date === today && !laterToday) {   // the day's latest orders are executed: holdings move to the post-trade state (old state archived)
       if (holdings) archive('pp.holdings', 'replaced', 'Portfolio holdings', holdings);
       const p0 = (sym: string) => s.px?.[sym] ?? priceOn(book, sym, addDays(s.date, -1));
       const ex = executeSignal(s, p0);
@@ -213,10 +218,9 @@ export default function App() {
 
       <SignalHistory rows={rows} today={today} hasToday={hasToday} resetIn={resetIn} onAdd={openToday}
         onEdit={(s) => setForm({ date: s.date, initial: s, existing: true })}
-        onDelete={(d) => {
-          const old = signals.find((x) => x.date === d);
-          if (old) archive(`pp.signals#${d}`, 'deleted', `Signal ${d}`, old);
-          setSignals((list) => list.filter((x) => x.date !== d));
+        onDelete={(old) => {
+          archive(`pp.signals#${sigId(old)}`, 'deleted', `Signal ${old.date}`, old);
+          setSignals((list) => list.filter((x) => sigId(x) !== sigId(old)));
         }} />
 
       <PriceChart sym={chartSym} setSym={setChartSym} book={book} today={today} />
@@ -240,7 +244,7 @@ export default function App() {
         initial={holdings ?? { sdca: sim?.sdca ?? { cash: 0, btc: 0 }, rsps: sim?.rsps ?? { cash: 0, units: {} }, updatedAt: 0 }}
         onSave={(h) => { if (holdings) archive('pp.holdings', 'replaced', 'Portfolio holdings', holdings); setHoldings(h); setHoldingsOpen(false); setFormSyms([]); }} onClose={() => { setHoldingsOpen(false); setFormSyms([]); }} />}
 
-      {form && <SignalForm feePct={feePct} today={today} liveAt={liveAt} date={form.date} initial={form.initial} book={book} editingExisting={form.existing}
+      {form && <SignalForm feePct={feePct} today={today} sameDay={signals.filter((x) => x.date === form.date).length} liveAt={liveAt} date={form.date} initial={form.initial} book={book} editingExisting={form.existing}
         onNeed={setFormSyms} onSave={saveSignal} onClose={() => { setForm(null); setFormSyms([]); }} />}
     </div>
   );

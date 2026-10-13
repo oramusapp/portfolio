@@ -77,7 +77,7 @@ export function RebalanceView({ p, live }: { p: RebalancePlan; live?: boolean })
 
 interface Props {
   rows: DayRow[]; today: string; hasToday: boolean; resetIn: string;
-  onAdd: () => void; onEdit: (s: Signal) => void; onDelete: (date: string) => void;
+  onAdd: () => void; onEdit: (s: Signal) => void; onDelete: (s: Signal) => void;
 }
 
 export function SignalHistory({ rows, today, hasToday, resetIn, onAdd, onEdit, onDelete }: Props) {
@@ -95,12 +95,12 @@ export function SignalHistory({ rows, today, hasToday, resetIn, onAdd, onEdit, o
         <div>
           <h2>Signal history</h2>
           <div className={hasToday ? 'dim small' : 'warn small'}>
-            {hasToday ? `Signal for ${today} saved.` : `No signal for ${today} (UTC) yet — the last allocation is carried as DUPLICATED.`} Reset at 00:00 UTC in {resetIn}.
+            {hasToday ? `Signal for ${today} saved — you can add another one; it starts from the holdings after the previous one.` : `No signal for ${today} (UTC) yet — the last allocation is carried as DUPLICATED.`} Reset at 00:00 UTC in {resetIn}.
           </div>
         </div>
         <div className="actions">
           {dupCount > 0 && <label className="check opt-toggle"><input type="checkbox" checked={signalsOnly} onChange={(e) => { setSignalsOnly(e.target.checked); setShown(PAGE); }} /><span />Signals only</label>}
-          <button className="btn gold" onClick={onAdd}><IcPlus width={18} />{hasToday ? 'Today’s Signal' : 'Add Signal'}</button>
+          <button className="btn gold" onClick={onAdd}><IcPlus width={18} />{hasToday ? 'Add another signal' : 'Add Signal'}</button>
           <button className={`btn ghost ${editing ? 'on' : ''}`} onClick={() => setEditing((e) => !e)}><IcPen width={17} />{editing ? 'Done' : 'Edit'}</button>
         </div>
       </div>
@@ -115,8 +115,10 @@ export function SignalHistory({ rows, today, hasToday, resetIn, onAdd, onEdit, o
                   <td className="date">{r.date}</td>
                   <td>
                     <span className="alloc">{allocText(r.signal.rsps.alloc)}</span>
-                    <span className="sdca-chip">{!r.duplicated && r.signal.sdcaNew === false ? 'SDCA dup' : sdcaText(r.duplicated ? 0 : r.signal.sdca.pct)}</span>
-                    {!r.duplicated && r.signal.rspsNew === false && <span className="sdca-chip">RSPS dup</span>}
+                    {r.execs.length > 1 ? <span className="sdca-chip multi">{r.execs.length} signals</span> : <>
+                      <span className="sdca-chip">{!r.duplicated && r.signal.sdcaNew === false ? 'SDCA dup' : sdcaText(r.duplicated ? 0 : r.signal.sdca.pct)}</span>
+                      {!r.duplicated && r.signal.rspsNew === false && <span className="sdca-chip">RSPS dup</span>}
+                    </>}
                     {r.duplicated ? <span className="tag dup">DUPLICATED</span> : <span className="tag sig">Signal <IcChevron width={14} className={open === r.date ? 'flip' : ''} /></span>}
                   </td>
                   <td className={`r ${tone(r.r)}`}>{pct(r.r)}</td>
@@ -124,25 +126,44 @@ export function SignalHistory({ rows, today, hasToday, resetIn, onAdd, onEdit, o
                   <td className={`r ${tone(r.totalGain)}`}>{pct(r.totalGain)}</td>
                   {editing && (
                     <td className="r nowrap" onClick={(e) => e.stopPropagation()}>
-                      {!r.duplicated && <>
+                      {r.execs.length === 1 && <>
                         <button className="icon" title="Edit signal" onClick={() => onEdit(r.signal)}><IcPen width={16} /></button>
-                        <button className="icon" title="Delete signal" onClick={() => { if (confirm(`Delete the signal of ${r.date}?`)) onDelete(r.date); }}><IcTrash width={16} /></button>
+                        <button className="icon" title="Delete signal" onClick={() => { if (confirm(`Delete the signal of ${r.date}?`)) onDelete(r.signal); }}><IcTrash width={16} /></button>
                       </>}
+                      {r.execs.length > 1 && <button className="btn ghost small" onClick={() => setOpen(r.date)}>{r.execs.length} signals ▾</button>}
                     </td>
                   )}
                 </tr>
                 {open === r.date && (
                   <tr className="detail"><td colSpan={editing ? 6 : 5}>
-                    <div className="split">
-                      <div>
-                        <h4>SDCA (BTC) <span className={tone(r.rSdca)}>{pct(r.rSdca)} day</span> · <span className={tone(r.sdcaGain)}>{pct(r.sdcaGain)} total</span> · {usd(r.sdcaValue, 2)}</h4>
-                        {r.sdca && r.signal.sdcaNew !== false ? <SdcaOrderView o={r.sdca} /> : <div className="dim">{r.duplicated ? `Carried from the signal of ${r.signal.date}` : 'No new SDCA signal (DUPLICATED)'}: no trade.</div>}
-                      </div>
-                      <div>
-                        <h4>RSPS <span className={tone(r.rRsps)}>{pct(r.rRsps)} day</span> · <span className={tone(r.rspsGain)}>{pct(r.rspsGain)} total</span> · {usd(r.rspsValue, 2)}</h4>
-                        {r.rsps ? <RebalanceView p={r.rsps} /> : <div className="dim">{r.duplicated ? `Carried from the signal of ${r.signal.date}` : 'No new RSPS signal (DUPLICATED)'}: no rebalance.</div>}
-                      </div>
+                    <div className="day-sum">
+                      <span><b>SDCA</b> <span className={tone(r.rSdca)}>{pct(r.rSdca)} day</span> · <span className={tone(r.sdcaGain)}>{pct(r.sdcaGain)} total</span> · {usd(r.sdcaValue, 2)}</span>
+                      <span><b>RSPS</b> <span className={tone(r.rRsps)}>{pct(r.rRsps)} day</span> · <span className={tone(r.rspsGain)}>{pct(r.rspsGain)} total</span> · {usd(r.rspsValue, 2)}</span>
                     </div>
+                    {r.duplicated && <div className="dim">Carried from the signal of {r.signal.date}: no trades.</div>}
+                    {r.execs.map((ex, i) => (
+                      <div className="exec" key={i}>
+                        {r.execs.length > 1 && (
+                          <div className="exec-head">
+                            <b>Signal {i + 1} of {r.execs.length}</b> <span className="dim small">saved {new Date(ex.signal.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>
+                            {editing && <span className="exec-actions">
+                              <button className="icon" title="Edit signal" onClick={() => onEdit(ex.signal)}><IcPen width={16} /></button>
+                              <button className="icon" title="Delete signal" onClick={() => { if (confirm(`Delete signal ${i + 1} of ${r.date}?`)) onDelete(ex.signal); }}><IcTrash width={16} /></button>
+                            </span>}
+                          </div>
+                        )}
+                        <div className="split">
+                          <div>
+                            <h4>SDCA (BTC)</h4>
+                            {ex.signal.sdcaNew !== false ? <SdcaOrderView o={ex.sdca} /> : <div className="dim">No new SDCA signal (DUPLICATED): no trade.</div>}
+                          </div>
+                          <div>
+                            <h4>RSPS</h4>
+                            {ex.rsps ? <RebalanceView p={ex.rsps} /> : <div className="dim">No new RSPS signal (DUPLICATED): no rebalance.</div>}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                     {r.missing.length > 0 && <div className="warn small">Missing price for {r.missing.join(', ')} — that day’s return may be incomplete.</div>}
                   </td></tr>
                 )}

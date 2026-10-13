@@ -20,6 +20,7 @@ export interface RspsInput { alloc: Record<string, number>; cash: number; units:
 /** sdcaNew / rspsNew = false: no new signal for that strategy that day (DUPLICATED) — no trades, holdings carried as they are.
  *  Missing (older signals) means true. */
 export interface Signal {
+  id?: string;   // unique per signal (several signals can share a date); older signals have none → their date is the id
   date: string; createdAt: number; sdca: SdcaInput; rsps: RspsInput; px?: Record<string, number>; sdcaNew?: boolean; rspsNew?: boolean;
   fee?: number;   // trading fee as a fraction of each trade's value, stored with the signal (setting at save time)
 }
@@ -105,9 +106,15 @@ const sdcaValue = (s: SdcaState, btcPx: number) => s.cash + s.btc * btcPx;
 const rspsValue = (s: RspsState, px: (sym: string) => number) =>
   Object.entries(s.units).reduce((t, [k, u]) => t + u * px(k), s.cash);
 
+export const sigId = (s: Signal) => s.id ?? s.date;
+/** Signals in execution order: by date, then by the time they were saved. */
+export const bySignalOrder = (a: Signal, b: Signal) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt;
+
+export interface Exec { signal: Signal; sdca: SdcaOrder; rsps: RebalancePlan | null; }
 export interface DayRow {
   date: string; signal: Signal; duplicated: boolean;
-  sdca: SdcaOrder | null; rsps: RebalancePlan | null;          // orders, only on signal days
+  execs: Exec[];                                               // every signal executed that day, in order
+  sdca: SdcaOrder | null; rsps: RebalancePlan | null;          // orders of the last signal of the day
   value: number; sdcaValue: number; rspsValue: number;
   r: number; rSdca: number; rRsps: number; btcDay: number;
   totalGain: number; sdcaGain: number; rspsGain: number;
@@ -121,42 +128,44 @@ const ret = (v1: number, v0: number) => (v0 > EPS && Number.isFinite(v1 / v0) ? 
 
 /** Replays every signal from the first one up to `today`. `start` is the day before the first signal (0% on the chart). */
 export function simulate(signals: Signal[], book: PriceBook, today: string): Simulation | null {
-  const sorted = [...signals].sort((a, b) => a.date.localeCompare(b.date));
+  const sorted = [...signals].sort(bySignalOrder);
   if (!sorted.length) return null;
-  const byDate = new Map(sorted.map((s) => [s.date, s]));
+  const byDate = new Map<string, Signal[]>();
+  for (const s of sorted) byDate.set(s.date, [...(byDate.get(s.date) ?? []), s]);
   const start = addDays(sorted[0].date, -1);
   let sd: SdcaState = { cash: 0, btc: 0 }, rs: RspsState = { cash: 0, units: {} };
-  let active = sorted[0], idx = 1, iSd = 1, iRs = 1, invested = 0;
+  let active = sorted[0], idx = 1, iSd = 1, iRs = 1, invested = 0, started = false;
   const rows: DayRow[] = [];
   for (const d of daysBetween(sorted[0].date, today < sorted[0].date ? sorted[0].date : today)) {
     const prev = addDays(d, -1);
     const p0 = (s: string) => priceOn(book, s, prev), p1 = (s: string) => priceOn(book, s, d);
-    const sig = byDate.get(d);
-    let order: SdcaOrder | null = null, plan: RebalancePlan | null = null;
-    // growth factors of the day: [old holdings from close D-1 to execution] × [new holdings from execution to close D]
+    const sigs = byDate.get(d) ?? [];
+    const execs: Exec[] = [];
+    // growth factors of the day, chained: close D-1 → 1st signal → 2nd signal → … → close D (holdings held in between)
     let gSd = 1, gRs = 1, gAll = 1, from = p0;
-    if (sig) {
+    for (const sig of sigs) {
       active = sig;
       const pe = (s: string) => sig.px?.[s] ?? p0(s);
-      if (rows.length) {
-        const a = sdcaValue(sd, p0('BTC')), b = sdcaValue(sd, pe('BTC')), c = rspsValue(rs, p0), e = rspsValue(rs, pe);
-        gSd = 1 + ret(b, a); gRs = 1 + ret(e, c); gAll = 1 + ret(b + e, a + c);
+      if (started) {
+        const a = sdcaValue(sd, from('BTC')), b = sdcaValue(sd, pe('BTC')), c = rspsValue(rs, from), e = rspsValue(rs, pe);
+        gSd *= 1 + ret(b, a); gRs *= 1 + ret(e, c); gAll *= 1 + ret(b + e, a + c);
       }
       // what you typed in vs what was carried forward = a deposit (+) or withdrawal (−)
       const typed = sdcaValue(sig.sdca, pe('BTC')) + rspsValue({ cash: sig.rsps.cash, units: sig.rsps.units }, pe);
-      const carried = rows.length ? sdcaValue(sd, pe('BTC')) + rspsValue(rs, pe) : 0;
+      const carried = started ? sdcaValue(sd, pe('BTC')) + rspsValue(rs, pe) : 0;
       if (Number.isFinite(typed - carried)) invested += typed - carried;
       const ex = executeSignal(sig, pe);
-      order = ex.order; plan = ex.plan;
-      sd = ex.sdca; rs = ex.rsps; from = pe;
+      execs.push({ signal: sig, sdca: ex.order, rsps: ex.plan });
+      sd = ex.sdca; rs = ex.rsps; from = pe; started = true;
     }
+    const lastEx = execs.at(-1);
     const s0 = sdcaValue(sd, from('BTC')), s1 = sdcaValue(sd, p1('BTC'));
     const r0 = rspsValue(rs, from), r1 = rspsValue(rs, p1);
     const rSdca = gSd * (1 + ret(s1, s0)) - 1, rRsps = gRs * (1 + ret(r1, r0)) - 1, r = gAll * (1 + ret(s1 + r1, s0 + r0)) - 1;
     idx *= 1 + r; iSd *= 1 + rSdca; iRs *= 1 + rRsps;
     const held = ['BTC', ...Object.keys(rs.units)];
     rows.push({
-      date: d, signal: active, duplicated: !sig, sdca: order, rsps: plan,
+      date: d, signal: active, duplicated: !sigs.length, execs, sdca: lastEx?.sdca ?? null, rsps: lastEx?.rsps ?? null,
       value: s1 + r1, sdcaValue: s1, rspsValue: r1,
       r, rSdca, rRsps, btcDay: ret(p1('BTC'), p0('BTC')),
       totalGain: idx - 1, sdcaGain: iSd - 1, rspsGain: iRs - 1, invested,
@@ -216,7 +225,7 @@ export function costBasis(signals: Signal[], book: PriceBook): Positions {
     if (proceeds !== null) { const pl = proceeds * (u / units) - basis; p.realized += pl; p.realizedByYear[year] = (p.realizedByYear[year] ?? 0) + pl; }
     if (p.units <= EPS) { p.units = 0; p.cost = 0; }
   };
-  for (const sig of [...signals].sort((a, b) => a.date.localeCompare(b.date))) {
+  for (const sig of [...signals].sort(bySignalOrder)) {
     const prev = addDays(sig.date, -1), year = sig.date.slice(0, 4);
     const pe = (s: string) => sig.px?.[s] ?? priceOn(book, s, prev);
     const fee = sig.fee ?? 0;

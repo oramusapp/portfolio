@@ -304,3 +304,11 @@ table.mini.stats tr.year-row td { background: var(--surface-2); }
 .gl-bar { height: 8px; border-radius: 4px; background: var(--neg); overflow: hidden; } .gl-bar i { display: block; height: 100%; background: var(--pos); }
 @media (max-width: 900px) { .cs2-grid { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 640px) { .cs2-head .r { text-align: left; } }
+
+/* several signals per day */
+.sdca-chip.multi { color: var(--accent); border-color: var(--accent); }
+.day-sum { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 13px; margin-bottom: 10px; }
+.exec { padding: 10px 0; border-top: 1px dashed var(--line); }
+.exec:first-of-type { border-top: 0; }
+.exec-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.exec-actions { margin-left: auto; }
