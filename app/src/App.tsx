@@ -206,7 +206,7 @@ export default function App() {
           : <div className="empty">{loading ? 'Loading prices…' : 'Add your first signal to start tracking performance.'}</div>}
       </section>
 
-      <StatsCard rows={rows} book={book} />
+      <StatsCard rows={rows} book={book} benchmarks={[...(bench.BTC ? ['BTC'] : []), ...(bench.SOL ? ['SOL'] : []), ...bench.extra]} />
 
       {errList.length > 0 && <div className="warn small">Price data unavailable: {errList.map(([s, e]) => `${s} (${e})`).join('; ')}</div>}
 

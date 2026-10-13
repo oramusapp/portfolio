@@ -6,8 +6,9 @@ import { pct, tone } from '../lib/format';
 
 const num2 = (v: number) => (Number.isFinite(v) ? v.toFixed(2) : '—');
 
-/** Risk numbers and monthly / yearly returns for the portfolio, each strategy and the BTC / SOL benchmarks. */
-export function StatsCard({ rows, book }: { rows: DayRow[]; book: PriceBook }) {
+/** Risk numbers and monthly / yearly returns for the portfolio, each strategy and the ticked benchmarks. */
+/** benchmarks = the coins ticked on the performance chart; unticked ones are left out here too. */
+export function StatsCard({ rows, book, benchmarks }: { rows: DayRow[]; book: PriceBook; benchmarks: string[] }) {
   const [tab, setTab] = useState<'risk' | 'months'>('risk');
   const dates = rows.map((r) => r.date);
   const bench = (sym: string) => dates.map((d) => { const a = priceOn(book, sym, addDays(d, -1)), b = priceOn(book, sym, d); return a > 0 && b > 0 ? b / a - 1 : 0; });
@@ -15,8 +16,7 @@ export function StatsCard({ rows, book }: { rows: DayRow[]; book: PriceBook }) {
     { label: 'Portfolio', rs: rows.map((r) => r.r) },
     { label: 'SDCA', rs: rows.map((r) => r.rSdca) },
     { label: 'RSPS', rs: rows.map((r) => r.rRsps) },
-    { label: 'BTC buy & hold', rs: bench('BTC') },
-    { label: 'SOL buy & hold', rs: bench('SOL') }
+    ...benchmarks.map((sym) => ({ label: `${sym} buy & hold`, rs: bench(sym) }))
   ];
   const per = series.map((s) => periodReturns(dates, s.rs));
   const months = [...per[0].months.keys()].reverse();
