@@ -1,7 +1,7 @@
 # Portfolio Performance — SDCA + RSPS
 
 Lokalna aplikacja webowa do liczenia performance portfela krypto z dwiema **całkowicie osobnymi** strategiami
-(SDCA = tylko BTC, RSPS = zamknięta lista 39 tokenów + CASH), z porównaniem do buy & hold BTC/SOL (i opcjonalnie innych tokenów z listy).
+(SDCA = tylko BTC, RSPS = zamknięta lista 40 tokenów + CASH), z porównaniem do buy & hold BTC/SOL (i opcjonalnie innych tokenów z listy).
 
 ## Uruchomienie
 
