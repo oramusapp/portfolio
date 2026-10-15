@@ -1,4 +1,4 @@
-// Closed set of RSPS assets: names and emoji copied from the RSPS list (37 tokens + CASH).
+// Closed set of RSPS assets: names and emoji copied from the RSPS list (37 tokens + CASH), plus XLM and GRAM added later.
 // `hl` = Hyperliquid perp name; k-prefixed perps are quoted per 1000 tokens (`scale` converts to one token).
 export interface TokenDef { sym: string; emoji: string; hl: string; scale: number; }
 
@@ -12,7 +12,7 @@ export const TOKENS: TokenDef[] = [
   t('PENDLE', '⏳'), t('NEAR', '🌐'), t('ONDO', '🏦'), t('TAO', '🧠'), t('ENA', '🔹'),
   t('HYPE', '🟢'), t('FARTCOIN', '💨'), t('PAXG', '🟡'), t('PUMP', '💊'), t('XPL', '🔌'),
   t('WLFI', '🦅'), t('ASTER', '✳️'), t('ZEC', '🛡️'), t('MON', '👾'), t('AERO', '✈️'),
-  t('LIT', '🔥'), t('XMR', '🕶️')
+  t('LIT', '🔥'), t('XMR', '🕶️'), t('XLM', '✨'), t('GRAM', '📨')
 ];
 
 export const CASH = 'CASH';
