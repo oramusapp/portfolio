@@ -144,7 +144,7 @@ function EtfSignalForm({ uni, date, today, initial, book, existing, feePct, same
         {errors.length > 0 && <ul className="errors">{errors.map((e) => <li key={e}>{e}</li>)}</ul>}
         <div className="modal-foot">
           <div className="after-note">
-            {nothing ? 'Tick DCA and/or Rebalance — otherwise nothing changes and the day stays DUPLICATED.'
+            {nothing ? 'Tick DCA and/or Rebalance — otherwise the signal changes nothing.'
               : ex && current ? <>After saving, holdings become — {Object.entries(ex.after.units).filter(([, u]) => u > 1e-9).map(([k, u]) => `${shares(u)} ${k}`).join(', ') || 'no shares'} + <b>{usd(ex.after.cash, 2)}</b> cash</> : null}
           </div>
           <button className="btn ghost" onClick={onClose}>Cancel</button>
@@ -263,7 +263,6 @@ export function EtfApp({ which, today, feePct, hideValue, setHideValue, holdings
   const [open, setOpen] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [shown, setShown] = useState(PAGE);
-  const [signalsOnly, setSignalsOnly] = usePersisted<boolean>(`${which}.signalsOnly`, false);
 
   const mainBench = bench[0] ?? 'SPY';
   const sim = useMemo(() => simulateEtf(signals, book, today, uni.tickers, mainBench), [signals, book, today, uni.tickers, mainBench]);
@@ -304,7 +303,7 @@ export function EtfApp({ which, today, feePct, hideValue, setHideValue, holdings
     archive(`pp.${which}.signals#${s.id}`, 'deleted', `${uni.title} signal ${s.date}`, s);
     setSignals((l) => l.filter((x) => x.id !== s.id));
   };
-  const all = [...rows].reverse().filter((r) => !signalsOnly || !r.duplicated);
+  const all = [...rows].reverse().filter((r) => !r.duplicated); // signals come only when entered — no daily rows
   const list = all.slice(0, shown);
   const priceDates = Object.keys(book[chartSym] ?? {}).sort().slice(-365);
   const mk = data?.tickers[chartSym];
@@ -335,10 +334,9 @@ export function EtfApp({ which, today, feePct, hideValue, setHideValue, holdings
         <div className="history-head">
           <div>
             <h2>Signal history</h2>
-            <div className="dim small">{hasToday ? `Signal for ${today} saved — you can add another one.` : `No signal for ${today} (UTC) yet — the last weights are carried as DUPLICATED.`} Execution prices = last close.</div>
+            <div className="dim small">Signals are not expected daily — add one only when there is a DCA or rebalance. Between signals the positions are simply held. Execution prices = last close.</div>
           </div>
           <div className="actions">
-            {rows.some((r) => r.duplicated) && <label className="check opt-toggle"><input type="checkbox" checked={signalsOnly} onChange={(e) => { setSignalsOnly(e.target.checked); setShown(PAGE); }} /><span />Signals only</label>}
             <button className="btn gold" onClick={openNew}><IcPlus width={18} />{hasToday ? 'Add another signal' : 'Add Signal'}</button>
             <button className={`btn ghost ${editing ? 'on' : ''}`} onClick={() => setEditing(!editing)}><IcPen width={17} />{editing ? 'Done' : 'Edit'}</button>
           </div>
@@ -347,7 +345,7 @@ export function EtfApp({ which, today, feePct, hideValue, setHideValue, holdings
           <table className="hist">
             <thead><tr><th>DATE</th><th>ALLOCATION</th><th className="r">STRATEGY DAY</th><th className="r">{mainBench} DAY</th><th className="r">TOTAL GAIN</th>{editing && <th />}</tr></thead>
             <tbody>
-              {!list.length && <tr><td colSpan={5} className="empty">{rows.length ? 'No days with a new signal.' : 'No signals yet — press “Add Signal”.'}</td></tr>}
+              {!list.length && <tr><td colSpan={5} className="empty">No signals yet — press “Add Signal”.</td></tr>}
               {list.map((r) => (
                 <Fragment key={r.date}>
                   <tr className="row" onClick={() => setOpen(open === r.date ? null : r.date)}>
@@ -358,7 +356,7 @@ export function EtfApp({ which, today, feePct, hideValue, setHideValue, holdings
                         {r.execs[0].signal.dca !== null && <span className="sdca-chip">DCA {r.execs[0].signal.dca > 0 ? 'buy' : 'sell'} {Math.abs(r.execs[0].signal.dca)}%</span>}
                         {r.execs[0].signal.rebalance && <span className="sdca-chip">Rebalance</span>}
                       </>}
-                      {r.duplicated ? <span className="tag dup">DUPLICATED</span> : <span className="tag sig">Signal <IcChevron width={14} className={open === r.date ? 'flip' : ''} /></span>}
+                      <span className="tag sig">Signal <IcChevron width={14} className={open === r.date ? 'flip' : ''} /></span>
                     </td>
                     <td className={`r ${tone(r.r)}`}>{pct(r.r)}</td>
                     <td className={`r ${tone(r.benchDay)}`}>{pct(r.benchDay)}</td>
@@ -374,7 +372,6 @@ export function EtfApp({ which, today, feePct, hideValue, setHideValue, holdings
                   {open === r.date && (
                     <tr className="detail"><td colSpan={editing ? 6 : 5}>
                       <div className="day-sum"><span><b>Value</b> {usd(r.value, 2)}</span><span><b>Day</b> <span className={tone(r.r)}>{pct(r.r)}</span></span></div>
-                      {r.duplicated && <div className="dim">Carried from the signal of {r.signal.date}: no trades.</div>}
                       {r.execs.map((ex, i) => (
                         <div className="exec" key={ex.signal.id}>
                           <div className="exec-head">
@@ -399,7 +396,7 @@ export function EtfApp({ which, today, feePct, hideValue, setHideValue, holdings
         </div>
         {all.length > PAGE && (
           <div className="hist-more">
-            <span className="dim small">Showing {Math.min(shown, all.length)} of {all.length} days</span>
+            <span className="dim small">Showing {Math.min(shown, all.length)} of {all.length} signal days</span>
             {shown < all.length && <button className="btn ghost small" onClick={() => setShown(shown + PAGE)}>Show {Math.min(PAGE, all.length - shown)} more</button>}
             {shown < all.length && <button className="btn ghost small" onClick={() => setShown(all.length)}>Show all</button>}
             {shown > PAGE && <button className="btn ghost small" onClick={() => setShown(PAGE)}>Show less</button>}
