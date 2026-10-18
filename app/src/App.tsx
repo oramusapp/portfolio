@@ -23,10 +23,14 @@ import { HoldingsPanel, type Holdings, type Flow } from './components/HoldingsPa
 import { NetWorthPanel, CATEGORIES, type NetWorth, type NetWorthSnapshot } from './components/NetWorthPanel';
 import { CornerPanel, type CornerTab } from './components/CornerPanel';
 import { NotesTab, type Note } from './components/Notes';
+import { EtfApp } from './EtfApp';
 import { PortfolioView } from './components/PortfolioView';
 
 const BENCH_COLORS: Record<string, string> = { BTC: 'var(--amber)', SOL: 'var(--cyan)' };
 const EXTRA_COLORS = ['#d946ef', '#84cc16', '#f97316', '#6366f1'];
+
+type PfTab = 'crypto' | 'stocks' | 'ai';
+const PF_TABS: [PfTab, string][] = [['crypto', 'Crypto'], ['stocks', 'Stocks'], ['ai', 'AI Apocalypse']];
 
 function useNow(ms = 30_000) {
   const [now, setNow] = useState(Date.now());
@@ -47,6 +51,8 @@ export default function App() {
   // Current holdings per strategy (top-right button). The next signal starts from them; saving today's signal updates them.
   const [holdings, setHoldings] = usePersisted<Holdings | null>('holdings', null);
   const [holdingsOpen, setHoldingsOpen] = useState(false);
+  const [tabRaw, setTab] = usePersisted<PfTab>('portfolio.tab', 'crypto');
+  const tab: PfTab = PF_TABS.some(([k]) => k === tabRaw) ? tabRaw : 'crypto';
   // Net worth across asset classes (bottom-right button), entered by hand.
   const [netWorth, setNetWorth] = usePersisted<NetWorth>('networth', { currency: 'USD', items: [], updatedAt: 0 });
   const [netWorthOpen, setNetWorthOpen] = useState(false);
@@ -170,7 +176,7 @@ export default function App() {
         <button className="theme-btn" title="Settings" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
           <IcGear width={19} />{dueCount > 0 && <span className="badge-dot">{dueCount}</span>}
         </button>
-        <button className="avatar-btn" title="Portfolio holdings" aria-label="Portfolio holdings" onClick={() => setHoldingsOpen(true)}>
+        <button className="avatar-btn" title={`${PF_TABS.find(([k]) => k === tab)![1]} holdings`} aria-label="Portfolio holdings" onClick={() => setHoldingsOpen(true)}>
           <img src="./holdings-icon.png" alt="" />
         </button>
       </div>
@@ -186,6 +192,11 @@ export default function App() {
         </div>
       )}
 
+      <div className="seg tabs pf-tabs" role="tablist">
+        {PF_TABS.map(([k, label]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}</button>)}
+      </div>
+
+      {tab === 'crypto' ? <>
       <Kpis value={valueNow} strategy={last?.totalGain ?? NaN} btc={btcBh} sdcaValue={holdings ? hSdca : last?.sdcaValue ?? 0} rspsValue={holdings ? hRsps : last?.rspsValue ?? 0} onOpenPortfolio={() => setPortfolioOpen(true)} hidden={hideValue} onToggleHidden={() => setHideValue(!hideValue)}
         gains={invested > 0 ? valueNow / invested - 1 : NaN} />
 
@@ -224,6 +235,7 @@ export default function App() {
         }} />
 
       <PriceChart sym={chartSym} setSym={setChartSym} book={book} today={today} />
+      </> : <EtfApp key={tab} which={tab} today={today} feePct={feePct} hideValue={hideValue} setHideValue={setHideValue} holdingsOpen={holdingsOpen} setHoldingsOpen={setHoldingsOpen} />}
 
       <Footer />
 
@@ -240,7 +252,7 @@ export default function App() {
       {saveFailed && <div className="update-banner"><div><b>Could not save</b><div className="dim small">The browser’s storage is full or blocked. Export a backup now.</div></div>
         <button className="btn gold small" onClick={() => { setSaveFailed(false); setSettingsOpen(true); }}>Backup</button></div>}
 
-      {holdingsOpen && <HoldingsPanel key={holdings?.updatedAt ?? 0} today={today} book={book} onNeed={setFormSyms} flows={flows} onFlow={applyFlow}
+      {tab === 'crypto' && holdingsOpen && <HoldingsPanel key={holdings?.updatedAt ?? 0} today={today} book={book} onNeed={setFormSyms} flows={flows} onFlow={applyFlow}
         initial={holdings ?? { sdca: sim?.sdca ?? { cash: 0, btc: 0 }, rsps: sim?.rsps ?? { cash: 0, units: {} }, updatedAt: 0 }}
         onSave={(h) => { if (holdings) archive('pp.holdings', 'replaced', 'Portfolio holdings', holdings); setHoldings(h); setHoldingsOpen(false); setFormSyms([]); }} onClose={() => { setHoldingsOpen(false); setFormSyms([]); }} />}
 

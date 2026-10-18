@@ -8,14 +8,16 @@ const num2 = (v: number) => (Number.isFinite(v) ? v.toFixed(2) : '—');
 
 /** Risk numbers and monthly / yearly returns for the portfolio, each strategy and the ticked benchmarks. */
 /** benchmarks = the coins ticked on the performance chart; unticked ones are left out here too. */
-export function StatsCard({ rows, book, benchmarks }: { rows: DayRow[]; book: PriceBook; benchmarks: string[] }) {
+export function StatsCard({ rows, book, benchmarks, strategies }: { rows: { date: string; r: number }[]; book: PriceBook; benchmarks: string[]; strategies?: { label: string; rs: number[] }[] }) {
   const [tab, setTab] = useState<'risk' | 'months'>('risk');
   const dates = rows.map((r) => r.date);
   const bench = (sym: string) => dates.map((d) => { const a = priceOn(book, sym, addDays(d, -1)), b = priceOn(book, sym, d); return a > 0 && b > 0 ? b / a - 1 : 0; });
   const series = [
-    { label: 'Portfolio', rs: rows.map((r) => r.r) },
-    { label: 'SDCA', rs: rows.map((r) => r.rSdca) },
-    { label: 'RSPS', rs: rows.map((r) => r.rRsps) },
+    ...(strategies ?? [
+      { label: 'Portfolio', rs: rows.map((r) => r.r) },
+      { label: 'SDCA', rs: (rows as DayRow[]).map((r) => r.rSdca) },
+      { label: 'RSPS', rs: (rows as DayRow[]).map((r) => r.rRsps) }
+    ]),
     ...benchmarks.map((sym) => ({ label: `${sym} buy & hold`, rs: bench(sym) }))
   ];
   const per = series.map((s) => periodReturns(dates, s.rs));

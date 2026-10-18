@@ -1,0 +1,32 @@
+# Daily ETF closes (Yahoo Finance) → markets.json, served by GitHub Pages next to the app.
+# Runs at 00:10 UTC, after the US, London and Xetra closes. Can also be started by hand (Actions → Markets snapshot → Run workflow).
+name: Markets snapshot
+on:
+  schedule:
+    - cron: '10 0 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: data-snapshot
+  cancel-in-progress: false
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fetch ETF closes and update markets.json
+        run: node scripts/markets.mjs
+      - name: Commit if changed
+        run: |
+          if git diff --quiet -- markets.json; then echo "No change"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add markets.json
+          git commit -m "Markets snapshot $(date -u +%F)"
+          for i in 1 2 3; do git pull --rebase origin main && git push origin HEAD:main && exit 0; sleep 10; done
+          exit 1

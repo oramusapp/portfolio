@@ -1,4 +1,4 @@
-# Portfolio Performance — SDCA + RSPS
+# SKB Portfolio Manager — Crypto (SDCA + RSPS), Stocks, AI Apocalypse
 
 Lokalna aplikacja webowa do liczenia performance portfela krypto z dwiema **całkowicie osobnymi** strategiami
 (SDCA = tylko BTC, RSPS = zamknięta lista 40 tokenów + CASH), z porównaniem do buy & hold BTC/SOL (i opcjonalnie innych tokenów z listy).
@@ -110,6 +110,20 @@ więc przetrwają odświeżenie i restart przeglądarki. Cała historia jest odt
   pomocniczo, np. do PIT-38 (trzeba przeliczyć po kursie urzędowym; to nie jest porada podatkowa).
 - **Historia Net worth**: każdy zapis tworzy punkt dnia (ostatni zapis dnia wygrywa); wykres od drugiego punktu.
 - **Przypomnienie o backupie**: gdy od ostatniego eksportu minęło 30 dni, na górze pojawia się *Time for a backup* (*Later* = za 7 dni).
+
+## Zakładki Stocks i AI Apocalypse (Interactive Brokers)
+Na górze są trzy zakładki: **Crypto**, **Stocks**, **AI Apocalypse**. Wybrana zakładka jest zapamiętywana. Ikonka w prawym górnym rogu otwiera holdings aktywnej zakładki.
+- **Stocks**: VWCE, IS04 (iShares $ Treasury Bond 20+yr, Xetra), SGLN (LSE), TRET (Xetra). Domyślne wagi to 25% każda.
+- **AI Apocalypse**: SMH, DTCR, NLR, CIBR, IGV, BOTZ. Domyślne wagi bazowe: 25/15/20/15/15/10.
+- Każdy portfel to jedna strategia: gotówka + udziały, z ułamkowymi ilościami („za ile kupione, tyle sztuk”, bez zaokrągleń). Sygnał może zawierać:
+  - **DCA**: kup x% gotówki podzielone według wag albo sprzedaj x% każdej pozycji;
+  - **Rebalance**: nowe wagi, w tym CASH.
+- Gdy sygnał ma oba elementy, najpierw wykonywany jest rebalance, potem DCA. W jednym dniu może być kilka sygnałów. Dni bez sygnału oznaczane są jako DUPLICATED.
+- Ceny to dzienne zamknięcia z Yahoo Finance. Codziennie o 00:10 UTC zapisuje je GitHub Action (`.github/workflows/markets.yml`, skrypt `scripts/markets.mjs`) do `markets.json`.
+  - Notowania w EUR i GBP/GBp są przeliczane na USD po kursie z danego dnia.
+  - Ceny **nie są live**: zlecenia liczone są po ostatnim zamknięciu. Weekendy i święta przyjmują ostatnią cenę.
+- Dywidendy nie są uwzględniane (IS04, TRET i SGLN są notowane jako ceny, nie total return).
+- Benchmarki: SPY, QQQ oraz ETF-y z danej listy.
 
 ## CS2 (Price chart → „CS2 market (skins)”)
 

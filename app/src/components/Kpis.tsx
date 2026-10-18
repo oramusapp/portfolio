@@ -1,15 +1,15 @@
 import { IcBolt, IcBtc, IcCase, IcEye, IcEyeOff, IcTrend, IcWallet } from './icons';
 import { pct, tone, usd } from '../lib/format';
 
-interface Props { value: number; strategy: number; btc: number; gains: number; sdcaValue: number; rspsValue: number; onOpenPortfolio: () => void; hidden: boolean; onToggleHidden: () => void; }
+interface Props { value: number; strategy: number; btc: number; gains: number; sdcaValue: number; rspsValue: number; onOpenPortfolio: () => void; hidden: boolean; onToggleHidden: () => void; benchLabel?: string; }
 
-export function Kpis({ value, strategy, btc, gains, sdcaValue, rspsValue, onOpenPortfolio, hidden, onToggleHidden }: Props) {
+export function Kpis({ value, strategy, btc, gains, sdcaValue, rspsValue, onOpenPortfolio, hidden, onToggleHidden, benchLabel = 'BTC' }: Props) {
   const vs = strategy - btc;
   const cards = [
     { v: usd(value), label: 'Portfolio value', icon: IcWallet, cls: '', title: hidden ? 'Value hidden — tap the eye to show' : `SDCA ${usd(sdcaValue)} · RSPS ${usd(rspsValue)} — tap for details`, onClick: onOpenPortfolio, privacy: true },
-    { v: pct(strategy), label: 'Strategy return', icon: IcTrend, cls: tone(strategy), title: 'Time-weighted return of SDCA + RSPS' },
-    { v: pct(btc), label: 'BTC buy & hold', icon: IcBtc, cls: tone(btc), title: 'BTC price change since the first signal' },
-    { v: Number.isFinite(vs) ? `${(vs * 100).toFixed(1)}% pts` : '—', label: 'Strategy vs BTC', icon: IcBolt, cls: tone(vs), title: 'Strategy return minus BTC buy & hold' },
+    { v: pct(strategy), label: 'Strategy return', icon: IcTrend, cls: tone(strategy), title: 'Time-weighted return of the strategy' },
+    { v: pct(btc), label: `${benchLabel} buy & hold`, icon: benchLabel === 'BTC' ? IcBtc : IcTrend, cls: tone(btc), title: `${benchLabel} price change since the first signal` },
+    { v: Number.isFinite(vs) ? `${(vs * 100).toFixed(1)}% pts` : '—', label: `Strategy vs ${benchLabel}`, icon: IcBolt, cls: tone(vs), title: `Strategy return minus ${benchLabel} buy & hold` },
     { v: pct(gains), label: 'Portfolio gains', icon: IcCase, cls: tone(gains), title: 'Portfolio value vs net money put in (deposits − withdrawals)' }
   ];
   return (

@@ -8,7 +8,7 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: cs2-snapshot
+  group: data-snapshot
   cancel-in-progress: false
 jobs:
   snapshot:

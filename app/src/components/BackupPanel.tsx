@@ -41,6 +41,16 @@ function restore(e: ArchiveEntry) {
     writeKey('pp.signals', JSON.stringify([...list.filter((x) => sigId(x) !== sigId(sig)), sig]));
     return;
   }
+  const etf = /^pp\.(stocks|ai)\.signals#/.exec(e.key);
+  if (etf) {
+    const listKey = `pp.${etf[1]}.signals`, sig = JSON.parse(e.data) as { id: string; date: string };
+    let list: { id: string }[] = [];
+    try { list = JSON.parse(localStorage.getItem(listKey) ?? '[]'); } catch { /* unreadable list is archived on load */ }
+    const cur = list.find((x) => x.id === sig.id);
+    if (cur) archive(`${listKey}#${sig.id}`, 'replaced', `Signal ${sig.date} (before restore)`, cur);
+    writeKey(listKey, JSON.stringify([...list.filter((x) => x.id !== sig.id), sig]));
+    return;
+  }
   if (e.key.startsWith(NOTE_PREFIX)) {
     const note = JSON.parse(e.data) as { id: string };
     let list: { id: string }[] = [];

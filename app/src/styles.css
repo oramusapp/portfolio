@@ -312,3 +312,7 @@ table.mini.stats tr.year-row td { background: var(--surface-2); }
 .exec:first-of-type { border-top: 0; }
 .exec-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .exec-actions { margin-left: auto; }
+.pf-tabs { display: flex; width: 100%; margin: 4px 0 14px; }
+.pf-tabs button { flex: 1; white-space: nowrap; padding: 9px 8px; }
+.modal.etf .pair select { width: 104px; } .modal.etf .pair input { min-width: 84px; }
+.modal.etf .pair .val { margin-left: auto; min-width: 68px; text-align: right; }

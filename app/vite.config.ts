@@ -15,9 +15,9 @@ export default defineConfig({
       injectRegister: false,
       includeAssets: ['apple-touch-icon.png', 'holdings-icon.png', 'networth-icon.png'],
       manifest: {
-        name: 'Portfolio Performance',
-        short_name: 'Portfolio',
-        description: 'SDCA + RSPS portfolio performance',
+        name: 'SKB Portfolio Manager',
+        short_name: 'SKB Portfolio',
+        description: 'SKB Portfolio Manager — crypto (SDCA + RSPS), stocks and AI Apocalypse portfolios',
         display: 'standalone',
         background_color: '#000000',
         theme_color: '#000000',

@@ -62,11 +62,11 @@ export function sdcaOrder(inp: SdcaInput, price: number, fee = 0): SdcaOrder {
 export const MIN_SDCA_BUY_PCT = 1;
 
 // ---------- RSPS ----------
-export function allocError(alloc: Record<string, number>): string | null {
+export function allocError(alloc: Record<string, number>, allowed: (s: string) => boolean = isAllowed, listName = 'RSPS list'): string | null {
   const keys = Object.keys(alloc);
   if (!keys.length) return 'Add at least one asset.';
   for (const k of keys) {
-    if (!isAllowed(k)) return `${k} is not on the RSPS list.`;
+    if (!allowed(k)) return `${k} is not on the ${listName}.`;
     if (!Number.isFinite(alloc[k]) || alloc[k] < 0) return `${k}: allocation must be ≥ 0%.`;
   }
   const sum = keys.reduce((s, k) => s + alloc[k], 0);

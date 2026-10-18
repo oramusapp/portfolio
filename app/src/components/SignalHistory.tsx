@@ -41,7 +41,7 @@ export function SdcaOrderView({ o, live }: { o: SdcaOrder; live?: boolean }) {
 
 const MIN_USD = 0.01;
 
-export function RebalanceView({ p, live }: { p: RebalancePlan; live?: boolean }) {
+export function RebalanceView({ p, live, partLabel = 'RSPS part', liveText }: { p: RebalancePlan; live?: boolean; partLabel?: string; liveText?: string }) {
   const cash = p.rows.find((r) => r.sym === CASH)!;
   const tokens = p.rows.filter((r) => r.sym !== CASH);
   const sells = tokens.filter((r) => r.deltaUsd < -MIN_USD).sort((a, b) => a.deltaUsd - b.deltaUsd);
@@ -58,7 +58,7 @@ export function RebalanceView({ p, live }: { p: RebalancePlan; live?: boolean })
   );
   return (
     <div className="order">
-      <div className="dim small">RSPS part {usd(p.total, 2)} = tokens {usd(p.total - cash.curUsd, 2)} + cash {usd(cash.curUsd, 2)} · prices {live ? 'live' : 'at save'}</div>
+      <div className="dim small">{partLabel} {usd(p.total, 2)} = {partLabel === 'RSPS part' ? 'tokens' : 'positions'} {usd(p.total - cash.curUsd, 2)} + cash {usd(cash.curUsd, 2)} · prices {liveText ?? (live ? 'live' : 'at save')}</div>
       {sells.length + buys.length === 0
         ? <div className="act-line"><span className="badge hold">HOLD</span>Nothing to trade — already on target.</div>
         : (
@@ -68,7 +68,7 @@ export function RebalanceView({ p, live }: { p: RebalancePlan; live?: boolean })
           </table>
         )}
       {sells.length > 0 && buys.length > 0 && <div className="dim small">Sell first, then buy with the proceeds.</div>}
-      <div className="cash-line">{emojiOf(CASH)} Cash: {usd(cash.curUsd, 2)} → <b>{usd(p.after.cash, 2)}</b> <span className="dim">({cash.tgtPct.toFixed(1)}% of RSPS)</span></div>
+      <div className="cash-line">{emojiOf(CASH)} Cash: {usd(cash.curUsd, 2)} → <b>{usd(p.after.cash, 2)}</b> <span className="dim">({cash.tgtPct.toFixed(1)}% of {partLabel === 'RSPS part' ? 'RSPS' : 'portfolio'})</span></div>
       {p.fee > 0 && <div className="dim small">Fees ≈ {usd(p.fee, 2)} — taken proportionally from the new holdings.</div>}
       {p.missing.length > 0 && <div className="warn small">Missing price: {p.missing.join(', ')}</div>}
     </div>
