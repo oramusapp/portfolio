@@ -125,6 +125,7 @@ Na górze są trzy zakładki: **Crypto**, **Stocks**, **AI Apocalypse**. Wybrana
   - Ceny **nie są live**: zlecenia liczone są po ostatnim zamknięciu. Weekendy i święta przyjmują ostatnią cenę.
 - Dywidendy nie są uwzględniane (IS04, TRET i SGLN są notowane jako ceny, nie total return).
 - Benchmarki: SPY, QQQ oraz ETF-y z danej listy.
+- W zakładce AI Apocalypse ikonka **?** (nad KPI) otwiera opis strategii: zasady (DCA przez kilka tygodni, piątek opcjonalnie, sygnały w dowolnym momencie), wagi bazowe z PDF, jak czytać arkusz sygnału, stress testy i wykluczone ETF-y.
 
 ## CS2 (Price chart → „CS2 market (skins)”)
 

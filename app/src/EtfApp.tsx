@@ -10,6 +10,7 @@ import { CASH, emojiOf } from './lib/tokens';
 import { addDays } from './lib/utc';
 import { num, pct, price, tone, usd } from './lib/format';
 import { Kpis } from './components/Kpis';
+import { AiInfo } from './components/AiInfo';
 import { LineChart, type Line } from './components/LineChart';
 import { StatsCard } from './components/StatsCard';
 import { RebalanceView } from './components/SignalHistory';
@@ -281,6 +282,7 @@ export function EtfApp({ which, today, feePct, hideValue, setHideValue, holdings
     ...bench.map((b, i) => ({ key: b, label: `${b} buy & hold`, color: COLORS[i % COLORS.length], dashed: true, values: [0, ...benchmarkEtf(book, b, sim.start, rows.map((r) => r.date))] }))
   ] : [];
   const hasToday = signals.some((s) => s.date === today);
+  const [infoOpen, setInfoOpen] = useState(false);
 
   const openNew = () => {
     const prev = [...signals].sort((a, b) => a.createdAt - b.createdAt).at(-1);
@@ -310,6 +312,10 @@ export function EtfApp({ which, today, feePct, hideValue, setHideValue, holdings
 
   return (
     <>
+      {which === 'ai' && <div className="strat-row">
+        <button className="info-btn" title="Strategy and rules" aria-label="Strategy and rules" onClick={() => setInfoOpen(true)}>?</button>
+      </div>}
+      {infoOpen && <AiInfo onClose={() => setInfoOpen(false)} />}
       <Kpis value={valueNow} strategy={last?.totalGain ?? NaN} btc={benchRet} sdcaValue={0} rspsValue={valueNow} benchLabel={mainBench}
         gains={invested > 0 ? valueNow / invested - 1 : NaN} onOpenPortfolio={() => setPvOpen(true)} hidden={hideValue} onToggleHidden={() => setHideValue(!hideValue)} />
       {error && !data && <div className="warn small">Market data not available yet ({error}). It is published daily after 00:10 UTC.</div>}

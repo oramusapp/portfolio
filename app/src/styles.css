@@ -316,3 +316,20 @@ table.mini.stats tr.year-row td { background: var(--surface-2); }
 .pf-tabs button { flex: 1; white-space: nowrap; padding: 9px 8px; }
 .modal.etf .pair select { width: 104px; } .modal.etf .pair input { min-width: 84px; }
 .modal.etf .pair .val { margin-left: auto; min-width: 68px; text-align: right; }
+.strat-row { display: flex; justify-content: flex-end; margin: -6px 0 8px; }
+.info-btn { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); color: var(--accent); font-family: inherit; font-weight: 700; font-size: 16px; line-height: 1; cursor: pointer; display: grid; place-items: center; }
+.info-btn:hover { background: var(--hover); }
+.ai-info h3 { margin: 0 0 8px; }
+.ai-info .pane { display: flex; flex-direction: column; gap: 10px; }
+.info-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; line-height: 1.45; }
+.info-table th, .info-table td { padding: 7px 8px; font-size: 13px; vertical-align: top; text-align: left; }
+.info-table th.r, .info-table td.r { text-align: right; white-space: nowrap; }
+.info-facts { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--dim); }
+.info-facts b { color: var(--text); }
+.info-table tr.no-line td { border-bottom: 0; padding-bottom: 2px; }
+.info-table td.why { padding-top: 0; font-size: 12.5px; line-height: 1.4; }
+.info-table .tiny { font-size: 11px; font-weight: 400; }
+table.mini.info-table td, table.mini.info-table th { white-space: normal; }
+table.mini.info-table td.r { white-space: nowrap; }
+.info-table th { font-size: 12px; }
+@media (max-width: 520px) { table.mini.info-table th, table.mini.info-table td { padding: 6px 5px; } .ai-info .pane { padding: 14px 12px; } }
