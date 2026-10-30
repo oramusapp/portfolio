@@ -1,6 +1,7 @@
 // Stocks and AI Apocalypse portfolios: one strategy each (cash + ETF units), daily closes in USD from markets.json.
 // A signal can carry a DCA order (buy x% of the cash split by the target weights, or sell x% of every position) and/or
-// a rebalance to new target weights (incl. CASH). With both, the rebalance runs first and the DCA uses what is left.
+// a rebalance to new target weights (incl. CASH) and/or single-position orders (target % / sell % / buy %).
+// Order: rebalance → position orders → DCA.
 // Orders use the latest close (stock prices are not live); saving stores those prices as the execution prices.
 // Shares are kept exactly as bought (amount / price, no rounding). Same-day signals chain like in the crypto engine.
 import { rebalance, riskStats, type RebalancePlan } from './engine';
@@ -28,7 +29,38 @@ export interface EtfSignal {
   alloc: Record<string, number>;                    // target weights in force after this signal (incl. CASH)
   rebalance: boolean;                               // new target weights → rebalance
   dca: number | null;                               // > 0 buy x% of cash by the weights, < 0 sell x% of every position, null = no DCA
+  orders?: PositionOrder[];                         // single-position orders (after the rebalance, before the DCA)
   px: Record<string, number>; fee?: number;
+}
+
+/** One ETF only: bring it to pct% of the portfolio value, sell pct% of the position, or buy with pct% of the cash. */
+export interface PositionOrder { sym: string; mode: 'target' | 'sell' | 'buy'; pct: number; }
+export interface TradeRow { sym: string; side: 'buy' | 'sell'; units: number; usd: number; price: number; note: string; }
+export interface TradesResult { rows: TradeRow[]; fee: number; after: EtfState; }
+
+/** Sells run first so their cash can fund the buys; a buy never spends more than the cash there is. */
+export function positionTrades(st: EtfState, orders: PositionOrder[], px: (s: string) => number, fee = 0): TradesResult {
+  const units = { ...st.units }; let cash = st.cash, fees = 0;
+  const total = Object.entries(st.units).reduce((t, [k, u]) => t + u * px(k), st.cash);
+  const rows: TradeRow[] = [];
+  const plan = orders.map((o) => {
+    const p = px(o.sym), held = (units[o.sym] ?? 0) * p, f = Math.min(Math.max(o.pct, 0), 100) / 100;
+    const usd = o.mode === 'target' ? f * total - held : o.mode === 'sell' ? -f * held : f * Math.max(st.cash, 0);
+    const note = o.mode === 'target' ? `to ${+o.pct.toFixed(4)}% of the portfolio` : o.mode === 'sell' ? `sell ${+o.pct.toFixed(4)}% of the position` : `buy with ${+o.pct.toFixed(4)}% of the cash`;
+    return { o, p, usd, note };
+  });
+  for (const x of plan.filter((x) => x.usd < -1e-9)) {
+    const n = Math.min(-x.usd / x.p, units[x.o.sym] ?? 0), gross = n * x.p;
+    units[x.o.sym] = (units[x.o.sym] ?? 0) - n; cash += gross * (1 - fee); fees += gross * fee;
+    rows.push({ sym: x.o.sym, side: 'sell', units: n, usd: gross * (1 - fee), price: x.p, note: x.note });
+  }
+  for (const x of plan.filter((x) => x.usd > 1e-9)) {
+    const spend = Math.min(x.usd, Math.max(cash, 0)); if (spend <= 1e-9) continue;
+    const n = spend * (1 - fee) / x.p;
+    units[x.o.sym] = (units[x.o.sym] ?? 0) + n; cash -= spend; fees += spend * fee;
+    rows.push({ sym: x.o.sym, side: 'buy', units: n, usd: spend, price: x.p, note: x.note + (spend < x.usd - 1e-6 ? ' (limited by cash)' : '') });
+  }
+  return { rows, fee: fees, after: { cash, units } };
 }
 
 export interface DcaOrder { side: 'buy' | 'sell'; pct: number; rows: { sym: string; usd: number; units: number; price: number }[]; fee: number; after: EtfState; }
@@ -51,15 +83,17 @@ export function dcaOrder(st: EtfState, pct: number, alloc: Record<string, number
   return { side: 'sell', pct: p, rows, fee: gross * fee, after: { cash: st.cash + gross * (1 - fee), units } };
 }
 
-export interface EtfExec { signal: EtfSignal; plan: RebalancePlan | null; dca: DcaOrder | null; after: EtfState; }
+export interface EtfExec { signal: EtfSignal; plan: RebalancePlan | null; trades: TradesResult | null; dca: DcaOrder | null; after: EtfState; }
 export function executeEtf(sig: EtfSignal, px: (s: string) => number, tickers: string[]): EtfExec {
   const fee = sig.fee ?? 0;
   let st: EtfState = { cash: sig.cash, units: { ...sig.units } };
   const plan = sig.rebalance ? rebalance({ alloc: sig.alloc, cash: st.cash, units: st.units }, px, fee) : null;
   if (plan) st = plan.after;
+  const trades = sig.orders?.length ? positionTrades(st, sig.orders, px, fee) : null;
+  if (trades) st = trades.after;
   const dca = sig.dca ? dcaOrder(st, sig.dca, sig.alloc, px, tickers, fee) : null;
   if (dca) st = dca.after;
-  return { signal: sig, plan, dca, after: st };
+  return { signal: sig, plan, trades, dca, after: st };
 }
 
 /** Close on `day`, forward-filled over weekends and holidays (up to 10 days). */

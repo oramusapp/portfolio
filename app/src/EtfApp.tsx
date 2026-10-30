@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { allocError, rebalance } from './lib/engine';
 import {
   UNIVERSES, benchmarkEtf, dcaOrder, etfCostBasis, etfPrice, executeEtf, lastCloseDate, simulateEtf,
-  type DcaOrder, type EtfSignal, type EtfState, type EtfUniverse
+  type DcaOrder, type PositionOrder, type TradesResult, type EtfSignal, type EtfState, type EtfUniverse
 } from './lib/etf';
 import type { PriceBook } from './lib/prices';
 import { archive, usePersisted } from './lib/storage';
@@ -50,6 +50,23 @@ const shares = (v: number) => (!Number.isFinite(v) ? '—' : v >= 1000 ? num(v, 
 const allocLine = (a: Record<string, number>) => Object.entries(a).filter(([, v]) => v > 0).sort((x, y) => y[1] - x[1]).map(([k, v]) => `${k === CASH ? `${emojiOf(CASH)} ` : ''}${k} ${+v.toFixed(2)}%`).join(' · ');
 const PAGE = 10;
 
+// ---------- single-position orders ----------
+const MODES: [PositionOrder['mode'], string][] = [['target', 'Target % of portfolio'], ['sell', 'Sell % of position'], ['buy', 'Buy with % of cash']];
+interface OrderRow { sym: string; mode: PositionOrder['mode']; v: string; }
+function TradesView({ t }: { t: TradesResult }) {
+  return (
+    <div className="order">
+      {t.rows.length ? (
+        <table className="mini orders"><tbody>{t.rows.map((r, i) => (
+          <tr key={i}><td><span className={`badge ${r.side}`}>{r.side.toUpperCase()}</span></td><td className="wrap"><b>{shares(r.units)} {r.sym}</b> <span className="dim">{r.side === 'sell' ? '≈ ' : ''}{usd(r.usd, 2)}</span><div className="dim tiny">{r.note} · @ {price(r.price)}</div></td></tr>
+        ))}</tbody></table>
+      ) : <div className="dim small">Nothing to trade — the positions are already there.</div>}
+      {t.fee > 0 && <div className="dim small">Fees ≈ {usd(t.fee, 2)} (included)</div>}
+      <div className="dim small">Cash after: {usd(t.after.cash, 2)}</div>
+    </div>
+  );
+}
+
 // ---------- DCA order view ----------
 function DcaView({ o }: { o: DcaOrder }) {
   return (
@@ -82,6 +99,8 @@ function EtfSignalForm({ uni, date, today, initial, book, existing, feePct, same
   const [dcaPct, setDcaPct] = useState(initial.dca ? String(Math.abs(initial.dca)) : '');
   const [rebOn, setRebOn] = useState(existing ? initial.rebalance : false);
   const [alloc, setAlloc] = useState<Pair[]>(toPairs(initial.alloc));
+  const [ordOn, setOrdOn] = useState(existing ? !!initial.orders?.length : false);
+  const [orders, setOrders] = useState<OrderRow[]>(initial.orders?.length && existing ? initial.orders.map((o) => ({ sym: o.sym, mode: o.mode, v: String(o.pct) })) : [{ sym: uni.tickers[0], mode: 'target', v: '' }]);
 
   const unitsRec = Object.fromEntries(units.filter((u) => n(u.v) > 0).map((u) => [u.sym, n(u.v)]));
   const allocRec = Object.fromEntries(alloc.map((a) => [a.sym, n(a.v)]));
@@ -90,15 +109,19 @@ function EtfSignalForm({ uni, date, today, initial, book, existing, feePct, same
     id: initial.id, date, createdAt: initial.createdAt, cash: n(cash), units: unitsRec,
     alloc: rebOn ? Object.fromEntries(Object.entries(allocRec).filter(([, v]) => v > 0)) : initial.alloc,
     rebalance: rebOn, dca: dcaOn ? (side === 'sell' ? -pctNum : pctNum) : null,
+    ...(ordOn ? { orders: orders.map((o) => ({ sym: o.sym, mode: o.mode, pct: n(o.v) })) } : {}),
     px: Object.fromEntries(uni.tickers.map((t) => [t, px(t)]).filter(([, v]) => Number.isFinite(v as number))), fee
   };
   const missing = uni.tickers.filter((t) => !Number.isFinite(px(t)));
   const errors: string[] = [];
   if (!(sig.cash >= 0) || Object.values(unitsRec).some((v) => !(v >= 0))) errors.push('Holdings must be ≥ 0.');
   if (dcaOn && !(pctNum > 0 && pctNum <= 100)) errors.push('DCA must be between 0% and 100%.');
+  if (ordOn && !orders.length) errors.push('Add at least one position order.');
+  if (ordOn && orders.some((o) => !(n(o.v) >= 0 && n(o.v) <= 100) || (o.mode !== 'target' && !(n(o.v) > 0)))) errors.push('Position orders: % must be between 0 and 100 (target 0% sells the whole position).');
+  if (ordOn && new Set(orders.map((o) => o.sym)).size < orders.length) errors.push('Position orders: one order per ETF.');
   const ae = rebOn ? allocError(allocRec, (k) => k === CASH || uni.tickers.includes(k), 'list') : null; if (ae) errors.push(ae);
   if (missing.length) errors.push(`No price for ${missing.join(', ')} yet (markets data still loading).`);
-  const nothing = !dcaOn && !rebOn;
+  const nothing = !dcaOn && !rebOn && !ordOn;
   const ex = !missing.length ? executeEtf(sig, px, uni.tickers) : null;
 
   return (
@@ -140,12 +163,36 @@ function EtfSignalForm({ uni, date, today, initial, book, existing, feePct, same
               <div className={Math.abs(alloc.reduce((t, a) => t + n(a.v), 0) - 100) <= 0.01 ? 'pos small' : 'warn small'}>Sum: {+alloc.reduce((t, a) => t + n(a.v), 0).toFixed(2)}%</div>
               {ex?.plan && <RebalanceView p={ex.plan} partLabel="Portfolio" liveText={`last close ${closeDay ?? ''}`} />}
             </> : <div className="dim small">Weights stay: {allocLine(initial.alloc) || '—'}</div>}
+            <div className="pane-head" style={{ marginTop: 10 }}>
+              <h3>Position orders</h3>
+              <label className="check new-toggle"><input type="checkbox" checked={ordOn} onChange={(e) => setOrdOn(e.target.checked)} /><span />Single ETF</label>
+            </div>
+            {ordOn ? <>
+              <div className="dim small">Trade one ETF without touching the others: set its share of the portfolio (e.g. VWCE to 40%; 0% sells it all), sell part of it, or buy it with part of the cash. Runs after the rebalance and before the DCA; sells go first.</div>
+              <div className="pairs">
+                {orders.map((o, i) => {
+                  const set = (patch: Partial<OrderRow>) => setOrders(orders.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+                  const held = (n(units.find((u) => u.sym === o.sym)?.v ?? '0') * px(o.sym));
+                  return (
+                    <div className="ord-row" key={i}>
+                      <select value={o.sym} onChange={(e) => set({ sym: e.target.value })}>{uni.tickers.map((t) => <option key={t} value={t}>{t}</option>)}</select>
+                      <select value={o.mode} onChange={(e) => set({ mode: e.target.value as OrderRow['mode'] })}>{MODES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+                      <div className="field"><input inputMode="decimal" placeholder="0" value={o.v} onChange={(e) => set({ v: e.target.value })} /><span className="unit">%</span></div>
+                      <span className="dim tiny">now {usd(held, 0)}</span>
+                      <button className="icon" title="Remove" onClick={() => setOrders(orders.filter((_, j) => j !== i))}><IcTrash width={16} /></button>
+                    </div>
+                  );
+                })}
+                {orders.length < uni.tickers.length && <button className="btn ghost small" onClick={() => setOrders([...orders, { sym: uni.tickers.find((t) => !orders.some((o) => o.sym === t)) ?? uni.tickers[0], mode: 'target', v: '' }])}><IcPlus width={15} />Add order</button>}
+              </div>
+              {ex?.trades && <TradesView t={ex.trades} />}
+            </> : <div className="dim small">No single-ETF orders.</div>}
           </div>
         </div>
         {errors.length > 0 && <ul className="errors">{errors.map((e) => <li key={e}>{e}</li>)}</ul>}
         <div className="modal-foot">
           <div className="after-note">
-            {nothing ? 'Tick DCA and/or Rebalance — otherwise the signal changes nothing.'
+            {nothing ? 'Tick DCA, Rebalance and/or Position orders — otherwise the signal changes nothing.'
               : ex && current ? <>After saving, holdings become — {Object.entries(ex.after.units).filter(([, u]) => u > 1e-9).map(([k, u]) => `${shares(u)} ${k}`).join(', ') || 'no shares'} + <b>{usd(ex.after.cash, 2)}</b> cash</> : null}
           </div>
           <button className="btn ghost" onClick={onClose}>Cancel</button>
@@ -361,6 +408,7 @@ export function EtfApp({ which, today, feePct, hideValue, setHideValue, holdings
                       {r.execs.length > 1 ? <span className="sdca-chip multi">{r.execs.length} signals</span> : r.execs.length === 1 && <>
                         {r.execs[0].signal.dca !== null && <span className="sdca-chip">DCA {r.execs[0].signal.dca > 0 ? 'buy' : 'sell'} {Math.abs(r.execs[0].signal.dca)}%</span>}
                         {r.execs[0].signal.rebalance && <span className="sdca-chip">Rebalance</span>}
+                        {r.execs[0].signal.orders?.map((o) => <span className="sdca-chip" key={o.sym}>{o.sym} {o.mode === 'target' ? `→ ${o.pct}%` : `${o.mode} ${o.pct}%`}</span>)}
                       </>}
                       <span className="tag sig">Signal <IcChevron width={14} className={open === r.date ? 'flip' : ''} /></span>
                     </td>
@@ -389,6 +437,7 @@ export function EtfApp({ which, today, feePct, hideValue, setHideValue, holdings
                           </div>
                           <div className="split">
                             <div><h4>Rebalance</h4>{ex.plan ? <RebalanceView p={ex.plan} partLabel="Portfolio" /> : <div className="dim">No new weights.</div>}</div>
+                            {ex.trades && <div><h4>Position orders</h4><TradesView t={ex.trades} /></div>}
                             <div><h4>DCA</h4>{ex.dca ? <DcaView o={ex.dca} /> : <div className="dim">No DCA.</div>}</div>
                           </div>
                         </div>

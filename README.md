@@ -118,7 +118,8 @@ Na górze są trzy zakładki: **Crypto**, **Stocks**, **AI Apocalypse**. Wybrana
 - Każdy portfel to jedna strategia: gotówka + udziały, z ułamkowymi ilościami („za ile kupione, tyle sztuk”, bez zaokrągleń). Sygnał może zawierać:
   - **DCA**: kup x% gotówki podzielone według wag albo sprzedaj x% każdej pozycji;
   - **Rebalance**: nowe wagi, w tym CASH.
-- Gdy sygnał ma oba elementy, najpierw wykonywany jest rebalance, potem DCA. W jednym dniu może być kilka sygnałów.
+  - **Position orders** (pojedynczy ETF, bez ruszania reszty): *Target % of portfolio* (np. VWCE do 40%; 0% = sprzedaj całość), *Sell % of position*, *Buy with % of cash*. Najpierw idą sprzedaże, zakupy są ograniczone do dostępnej gotówki. Wagi docelowe (używane przez DCA) się nie zmieniają.
+- Kolejność w jednym sygnale: rebalance → position orders → DCA. W jednym dniu może być kilka sygnałów.
 - Sygnały **nie są oczekiwane codziennie**: dodajesz je tylko wtedy, gdy jest DCA lub rebalans. Między sygnałami pozycje są po prostu trzymane, a wyniki liczone są codziennie z cen zamknięcia. Historia pokazuje wyłącznie dni z sygnałami (bez wierszy DUPLICATED).
 - Ceny to dzienne zamknięcia z Yahoo Finance. Codziennie o 00:10 UTC zapisuje je GitHub Action (`.github/workflows/markets.yml`, skrypt `scripts/markets.mjs`) do `markets.json`.
   - Notowania w EUR i GBP/GBp są przeliczane na USD po kursie z danego dnia.

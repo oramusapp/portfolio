@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dcaOrder, etfCostBasis, executeEtf, simulateEtf, type EtfSignal } from './etf';
+import { dcaOrder, etfCostBasis, executeEtf, positionTrades, simulateEtf, type EtfSignal } from './etf';
 import type { PriceBook } from './prices';
 
 const px = (s: string) => ({ A: 10, B: 20, CASH: 1 } as Record<string, number>)[s];
@@ -30,5 +30,27 @@ describe('ETF signals', () => {
     expect(sim.rows.at(-1)!.value).toBeCloseTo(500 + 50 * 12);   // weekend forward-filled, Monday close
     const pos = etfCostBasis([sig({}), sig({ id: 'y', date: '2026-01-05', createdAt: 2, units: { A: 50 }, cash: 500, alloc: { CASH: 100 }, px: { A: 12 } })], book, ['A']);
     expect(pos.A.realized).toBeCloseTo(50 * 2);
+  });
+});
+
+describe('position orders', () => {
+  const px = (s: string) => ({ VWCE: 100, SGLN: 50 } as Record<string, number>)[s] ?? 1;
+  it('targets a weight, sells first and buys within cash', () => {
+    // total 2000: VWCE 1000 (50%), SGLN 500, cash 500
+    const t = positionTrades({ cash: 500, units: { VWCE: 10, SGLN: 10 } }, [{ sym: 'VWCE', mode: 'target', pct: 20 }, { sym: 'SGLN', mode: 'target', pct: 60 }], px);
+    expect(t.after.units.VWCE).toBeCloseTo(4);           // 400 USD = 20%
+    expect(t.after.units.SGLN).toBeCloseTo(24);          // 1200 USD = 60%, funded by the VWCE sale
+    expect(t.after.cash).toBeCloseTo(400);
+  });
+  it('sells x% of a position and caps buys at the cash', () => {
+    const t = positionTrades({ cash: 100, units: { VWCE: 10 } }, [{ sym: 'VWCE', mode: 'sell', pct: 50 }, { sym: 'SGLN', mode: 'target', pct: 90 }], px);
+    expect(t.after.units.VWCE).toBeCloseTo(5);
+    expect(t.after.cash).toBeCloseTo(0);
+    expect(t.after.units.SGLN).toBeCloseTo(12);          // 600 USD available, target would need 990
+  });
+  it('runs inside a signal after the rebalance', () => {
+    const ex = executeEtf({ id: 'x', date: '2026-01-01', createdAt: 1, cash: 1000, units: {}, alloc: {}, rebalance: false, dca: null, px: {}, orders: [{ sym: 'VWCE', mode: 'buy', pct: 50 }] }, px, ['VWCE']);
+    expect(ex.after.units.VWCE).toBeCloseTo(5);
+    expect(ex.after.cash).toBeCloseTo(500);
   });
 });

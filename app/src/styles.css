@@ -333,3 +333,8 @@ table.mini.info-table td, table.mini.info-table th { white-space: normal; }
 table.mini.info-table td.r { white-space: nowrap; }
 .info-table th { font-size: 12px; }
 @media (max-width: 520px) { table.mini.info-table th, table.mini.info-table td { padding: 6px 5px; } .ai-info .pane { padding: 14px 12px; } }
+.ord-row { display: flex; gap: 6px; align-items: center; width: 100%; flex-wrap: wrap; }
+.ord-row select:first-child { width: 92px; } .ord-row select:nth-child(2) { flex: 1; min-width: 150px; }
+.ord-row .field { width: 96px; } .ord-row .field input { min-width: 0; }
+.ord-row .tiny { margin-left: auto; }
+table.mini td.wrap { white-space: normal; }
