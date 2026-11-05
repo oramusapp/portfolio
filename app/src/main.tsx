@@ -7,6 +7,7 @@ import { applyTheme, initialTheme } from './lib/theme';
 import '@fontsource/share-tech-mono';
 import './styles.css';
 import { MatrixRain } from './components/MatrixRain';
+import { LockGate } from './components/LockGate';
 
 // No zooming: pinch (iOS gesture events, multi-touch, trackpad ctrl+wheel) and double-tap (CSS touch-action + guard below).
 // iOS ignores user-scalable=no, so the gestures are blocked here as well.
@@ -28,4 +29,4 @@ migrate();
 applyTheme(initialTheme());
 requestPersistence();
 
-createRoot(document.getElementById('root')!).render(<StrictMode><MatrixRain /><App /><UpdateBanner /></StrictMode>);
+createRoot(document.getElementById('root')!).render(<StrictMode><MatrixRain /><LockGate><App /></LockGate><UpdateBanner /></StrictMode>);

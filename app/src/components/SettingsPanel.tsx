@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { BackupSection } from './BackupPanel';
+import { useAuth } from './LockGate';
+import { AUTO_LOCK_OPTIONS } from '../lib/auth';
 import { IcBell, IcClose, IcPen, IcPlus, IcTrash } from './icons';
 import { WEEKDAYS, describe, dueFor, localToday, nextOccurrence, type Reminder, type Schedule } from '../lib/reminders';
 import type { Theme } from '../lib/theme';
@@ -61,6 +63,8 @@ export function SettingsPanel({ theme, setTheme, feePct, setFeePct, reminders, s
             <button className={theme === 'light' ? 'on' : ''} onClick={() => setTheme('light')}>Light</button>
           </div>
         </section>
+
+        <SecuritySection />
 
         <section className="set-sec">
           <h3>Trading fees <span className="dim small">(optional)</span></h3>
@@ -135,5 +139,44 @@ export function SettingsPanel({ theme, setTheme, feePct, setFeePct, reminders, s
         </section>
       </div>
     </div>
+  );
+}
+
+function SecuritySection() {
+  const auth = useAuth();
+  const [open, setOpen] = useState(false), [cur, setCur] = useState(''), [pw, setPw] = useState(''), [rep, setRep] = useState('');
+  const [busy, setBusy] = useState(false), [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  if (!auth) return null;
+  const change = async () => {
+    setBusy(true);
+    const err = await auth.changePassword(cur, pw, rep);
+    setBusy(false);
+    setMsg(err ? { ok: false, text: err } : { ok: true, text: 'Password changed.' });
+    if (!err) { setOpen(false); setCur(''); setPw(''); setRep(''); }
+  };
+  return (
+    <section className="set-sec">
+      <div className="pane-head">
+        <h3>Security</h3>
+        <button className="btn ghost small" onClick={auth.lock}>Lock now</button>
+      </div>
+      <div className="dim small">Auto-lock after this long without use (time in the background counts):</div>
+      <div className="seg">
+        {AUTO_LOCK_OPTIONS.map((m) => <button key={m} className={auth.autoLockMin === m ? 'on' : ''} onClick={() => auth.setAutoLockMin(m)}>{m} min</button>)}
+      </div>
+      {!open ? <button className="btn ghost small" style={{ alignSelf: 'flex-start' }} onClick={() => { setOpen(true); setMsg(null); }}>Change password</button> : (
+        <div className="pw-form">
+          <input type="password" autoComplete="current-password" placeholder="Current password" value={cur} onChange={(e) => setCur(e.target.value)} />
+          <input type="password" autoComplete="new-password" placeholder="New password (8+ characters)" value={pw} onChange={(e) => setPw(e.target.value)} />
+          <input type="password" autoComplete="new-password" placeholder="Repeat new password" value={rep} onChange={(e) => setRep(e.target.value)} />
+          <div className="row-btns">
+            <button className="btn ghost small" onClick={() => { setOpen(false); setMsg(null); }}>Cancel</button>
+            <button className="btn gold small" disabled={busy || !cur || !pw} onClick={() => void change()}>{busy ? 'Checking…' : 'Save password'}</button>
+          </div>
+        </div>
+      )}
+      {msg && <div className={msg.ok ? 'pos small' : 'warn small'}>{msg.text}</div>}
+      <div className="dim tiny">Only a salted PBKDF2 hash of the password is stored on this device. The lock keeps others out of the app; it does not encrypt the stored data.</div>
+    </section>
   );
 }
