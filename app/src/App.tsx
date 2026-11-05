@@ -5,10 +5,7 @@ import { exportNow } from './components/BackupPanel';
 import { priceOn } from './lib/prices';
 import { usePersisted, archive, SAVE_FAILED } from './lib/storage';
 import { applyTheme } from './lib/theme';
-import { IcGear, IcList, IcLock } from './components/icons';
-import { ChecklistPanel } from './components/ChecklistPanel';
-import { useAuth } from './components/LockGate';
-import { DAILY_ITEMS, countDone, dailyFor, toggleDaily, type DailyState, type StageState } from './lib/checklist';
+import { IcGear } from './components/icons';
 import { SettingsPanel } from './components/SettingsPanel';
 import { RemindersDue } from './components/RemindersDue';
 import { dueFor, localToday, type Reminder } from './lib/reminders';
@@ -62,13 +59,6 @@ export default function App() {
   const [cornerTab, setCornerTab] = usePersisted<CornerTab>('corner.tab', 'networth');
   const [notes, setNotes] = usePersisted<Note[]>('notes', []);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // Rulebook checklist: the daily part starts empty every local day, the stage gates persist.
-  const localDay = localToday(new Date(now));
-  const [dailyRaw, setDaily] = usePersisted<DailyState | null>('checklist.daily', null);
-  const daily = dailyFor(dailyRaw, localDay);
-  const [stages, setStages] = usePersisted<StageState>('checklist.stages', {});
-  const [checklistOpen, setChecklistOpen] = useState(false);
-  const auth = useAuth();
   const [reminders, setReminders] = usePersisted<Reminder[]>('reminders', []);
   const dueCount = reminders.filter((r) => dueFor(r, localToday(new Date(now)))).length;
   const saveReminder = (r: Reminder) => {
@@ -183,10 +173,6 @@ export default function App() {
   return (
     <div className="page">
       <div className="topbar">
-        <button className={`cl-btn ${countDone(daily) === DAILY_ITEMS.length ? 'full' : ''}`} title="Checklist" aria-label={`Checklist, ${countDone(daily)} of ${DAILY_ITEMS.length} done today`} onClick={() => setChecklistOpen(true)}>
-          <IcList width={18} /><span>Checklist</span><b>{countDone(daily)}/{DAILY_ITEMS.length}</b>
-        </button>
-        {auth && <button className="theme-btn" title="Lock" aria-label="Lock the app" onClick={auth.lock}><IcLock width={18} /></button>}
         <button className="theme-btn" title="Settings" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
           <IcGear width={19} />{dueCount > 0 && <span className="badge-dot">{dueCount}</span>}
         </button>
@@ -262,8 +248,6 @@ export default function App() {
 
       {portfolioOpen && <PortfolioView today={today} book={book} positions={positions} onClose={() => setPortfolioOpen(false)}
         sdca={holdings?.sdca ?? sim?.sdca ?? { cash: 0, btc: 0 }} rsps={holdings?.rsps ?? sim?.rsps ?? { cash: 0, units: {} }} />}
-      {checklistOpen && <ChecklistPanel today={localDay} daily={daily} onToggle={(id) => setDaily(toggleDaily(dailyRaw, id, localDay))}
-        stages={stages} setStages={setStages} onClose={() => setChecklistOpen(false)} />}
       {settingsOpen && <SettingsPanel theme={theme} setTheme={setTheme} feePct={feePct} setFeePct={setFeePct} reminders={reminders} saveReminder={saveReminder} deleteReminder={deleteReminder} onClose={() => setSettingsOpen(false)} />}
       {saveFailed && <div className="update-banner"><div><b>Could not save</b><div className="dim small">The browser’s storage is full or blocked. Export a backup now.</div></div>
         <button className="btn gold small" onClick={() => { setSaveFailed(false); setSettingsOpen(true); }}>Backup</button></div>}

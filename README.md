@@ -111,22 +111,6 @@ więc przetrwają odświeżenie i restart przeglądarki. Cała historia jest odt
 - **Historia Net worth**: każdy zapis tworzy punkt dnia (ostatni zapis dnia wygrywa); wykres od drugiego punktu.
 - **Przypomnienie o backupie**: gdy od ostatniego eksportu minęło 30 dni, na górze pojawia się *Time for a backup* (*Later* = za 7 dni).
 
-## Checklist (Crypto Learning System Rulebook)
-Przycisk **Checklist** w górnym pasku pokazuje dzisiejszy postęp (np. `3/7`).
-- **Daily check**: 7 punktów z rulebooka. Lista zaczyna się pusta każdego dnia (lokalna północ telefonu). Wynik poprzednich dni zostaje w historii (ostatnie 60 dni, widok 7 dni).
-- **Stage gates**: etapy 0–5 z tekstem bramki, przełącznik *Passed* z datą (edytowalną). Widać bieżący etap i ile bramek zaliczono. Stan jest trwały.
-- Dane: `pp.checklist.daily`, `pp.checklist.stages` (są w kopii zapasowej).
-
-## Hasło i blokada
-- Przy pierwszym uruchomieniu aplikacja prosi o ustawienie hasła (min. 8 znaków). Hasło nie jest nigdzie zapisane ani wpisane w kod: przechowywany jest tylko hash **PBKDF2-SHA256, 600 000 iteracji, losowa sól 16 B** (Web Crypto) w `pp.auth`.
-- Po każdym uruchomieniu i po auto-blokadzie trzeba podać hasło. Ikonka kłódki w górnym pasku blokuje od razu.
-- **Auto-lock** po 1/5/15/30/60 min bez użycia (domyślnie 5; czas w tle też się liczy) — Ustawienia → Security. Tam też zmiana hasła.
-- **Limit prób**: 5 błędnych prób bez kary, potem przerwa 30 s, podwajana przy kolejnych błędach (maks. 15 min). Licznik przetrwa przeładowanie strony.
-- Zapomniane hasło nie da się odzyskać: „Forgot password?” pozwala tylko **wymazać wszystkie dane** na urządzeniu (potwierdzenie słowem ERASE) i odtworzyć kopię zapasową.
-- Hash hasła nie trafia do eksportu kopii i import kopii go nie zmienia.
-- Hasła nie da się ustawić przez zmienną środowiskową: aplikacja jest statyczna (GitHub Pages), więc taka wartość trafiłaby do publicznego pliku JS.
-- **Ograniczenie**: to blokada dostępu do aplikacji, a nie szyfrowanie. Dane nadal leżą w `localStorage` i osoba z dostępem do odblokowanego urządzenia i narzędzi deweloperskich może je odczytać.
-
 ## Zakładki Stocks i AI Apocalypse (Interactive Brokers)
 Na górze są trzy zakładki: **Crypto**, **Stocks**, **AI Apocalypse**. Wybrana zakładka jest zapamiętywana. Ikonka w prawym górnym rogu otwiera holdings aktywnej zakładki.
 - **Stocks**: VWCE, IS04 (iShares $ Treasury Bond 20+yr, Xetra), SGLN (LSE), TRET (Xetra). Domyślne wagi to 25% każda.

@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { isAuthKey } from './auth';
 
 // Signals, holdings and settings are kept in localStorage under the app's address. An app update (new deploy,
 // new service worker) only replaces the code, so this data stays. Rules that keep data from being lost:
@@ -8,7 +7,6 @@ import { isAuthKey } from './auth';
 //    (a snapshot of all data is archived before migrating),
 //  • nothing is overwritten automatically: a value is written only after the user changed it, unreadable data is
 //    archived before anything replaces it, and replaced/deleted records go to the archive (restorable in Backup).
-//  • the password hash (pp.auth*) is never exported, imported or archived.
 const PREFIX = 'pp.';
 export const SCHEMA_VERSION = 1;
 const ARCHIVE = PREFIX + 'archive';
@@ -21,7 +19,7 @@ export const SAVE_FAILED = 'pp-save-failed';
 export const STORAGE_CHANGED = 'pp-storage-changed';
 
 const dataKeys = () => {
-  try { return Object.keys(localStorage).filter((k) => k.startsWith(PREFIX) && k !== ARCHIVE && !isAuthKey(k)); } catch { return []; }
+  try { return Object.keys(localStorage).filter((k) => k.startsWith(PREFIX) && k !== ARCHIVE); } catch { return []; }
 };
 
 // ---------- archive ----------
@@ -62,7 +60,7 @@ export function importBackup(file: BackupFile) {
   archive('*', 'before-import', 'All data before import', exportBackup().data);
   const keep = new Set([ARCHIVE]);
   for (const k of dataKeys()) if (!keep.has(k) && !(k in file.data)) localStorage.removeItem(k);
-  for (const [k, v] of Object.entries(file.data)) if (k.startsWith(PREFIX) && k !== ARCHIVE && !isAuthKey(k)) writeRaw(k, v);   // a backup never changes the password
+  for (const [k, v] of Object.entries(file.data)) if (k.startsWith(PREFIX) && k !== ARCHIVE) writeRaw(k, v);
   if (file.archive?.length) {
     const ids = new Set(readArchive().map((e) => e.id));
     writeRaw(ARCHIVE, JSON.stringify([...readArchive(), ...file.archive.filter((e) => !ids.has(e.id))].sort((a, b) => b.time - a.time).slice(0, ARCHIVE_MAX)));
