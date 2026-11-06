@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allocError, rebalance, sdcaOrder, simulate, benchmark, type Signal } from './engine';
+import { allocError, fillCash, rebalance, sdcaOrder, simulate, benchmark, type Signal } from './engine';
 import type { PriceBook } from './prices';
 
 describe('SDCA', () => {
@@ -104,5 +104,25 @@ describe('several signals on one day', () => {
     // 1000 → (500 cash + 5 BTC) → at 110: 1050 → all BTC → at 120: 1050 × 120/110
     expect(row.rSdca).toBeCloseTo((1050 * 120 / 110) / 1000 - 1);
     expect(row.invested).toBeCloseTo(1000);
+  });
+});
+
+describe('fillCash', () => {
+  it('puts the rest of an allocation under 100% into CASH', () => {
+    expect(fillCash({ BTC: 30, ETH: 20 })).toEqual({ alloc: { BTC: 30, ETH: 20, CASH: 50 }, added: 50 });
+  });
+  it('adds to a CASH row that is already there', () => {
+    expect(fillCash({ OP: 5, ICP: 5, CASH: 10 })).toEqual({ alloc: { OP: 5, ICP: 5, CASH: 90 }, added: 80 });
+  });
+  it('leaves a full, empty or over-100% allocation unchanged', () => {
+    expect(fillCash({ BTC: 60, CASH: 40 }).added).toBe(0);
+    expect(fillCash({}).added).toBe(0);
+    expect(fillCash({ BTC: 0 }).added).toBe(0);
+    expect(fillCash({ BTC: 70, ETH: 40 })).toEqual({ alloc: { BTC: 70, ETH: 40 }, added: 0 });
+  });
+  it('the filled allocation passes the 100% check', () => {
+    const { alloc } = fillCash({ OP: 5, ICP: 5, ARB: 5, SUI: 5, SHIB: 5, DASH: 5, ALGO: 5, FIL: 5, INJ: 2.5, XMR: 2.5 });
+    expect(alloc.CASH).toBe(55);
+    expect(allocError(alloc)).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { MIN_SDCA_BUY_PCT, allocError, rebalance, sdcaOrder, type Signal } from '../lib/engine';
+import { MIN_SDCA_BUY_PCT, allocError, fillCash, rebalance, sdcaOrder, type Signal } from '../lib/engine';
 import { priceOn, type PriceBook } from '../lib/prices';
 import { ALL_ASSETS, CASH, TOKENS, emojiOf } from '../lib/tokens';
 import { addDays } from '../lib/utc';
@@ -69,7 +69,9 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
 
   const pctNum = n(sdcaPct);
   const sdcaInput = { pct: side === 'sell' ? -pctNum : pctNum, cash: n(sdcaCash), btc: n(sdcaBtc) };
-  const allocRec = Object.fromEntries(alloc.map((r) => [r.sym, n(r.v)]));
+  // under 100% the rest goes to CASH automatically (confirmed on save)
+  const { alloc: allocRec, added: cashAdded } = fillCash(Object.fromEntries(alloc.map((r) => [r.sym, n(r.v)])));
+  const [confirmCash, setConfirmCash] = useState(false);
   const unitsRec = Object.fromEntries(units.filter((r) => n(r.v) > 0).map((r) => [r.sym, n(r.v)]));
   const rspsInput = { alloc: allocRec, cash: n(rspsCash), units: unitsRec };
 
@@ -90,8 +92,9 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
   const afterSdca = sdcaNew && order ? order.after : { cash: sdcaInput.cash, btc: sdcaInput.btc };
   const afterRsps = rspsNew ? plan.after : { cash: rspsInput.cash, units: unitsRec };
 
-  const save = () => {
+  const save = (confirmed = false) => {
     if (errors.length || nothing) return;
+    if (rspsNew && cashAdded > 0 && !confirmed) { setConfirmCash(true); return; }
     const used = ['BTC', ...Object.keys(allocRec), ...Object.keys(unitsRec)].filter((k) => k !== CASH);
     const snapshot = Object.fromEntries(used.map((k) => [k, px(k)]).filter(([, v]) => Number.isFinite(v as number)));
     onSave({
@@ -154,9 +157,9 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
                 <div className="dim small">Tick “New signal today” to enter a new allocation.</div>
               </div>
             ) : <>
-            <div className="dim small">Target allocation (must sum to 100%):</div>
+            <div className="dim small">Target allocation (100%; anything left under 100% goes to {emojiOf(CASH)} CASH):</div>
             <PairRows rows={alloc} setRows={setAlloc} options={ALL_ASSETS} unit="%" placeholder="0" />
-            <div className={Math.abs(sum - 100) <= 0.01 ? 'pos small' : 'warn small'}>Sum: {+sum.toFixed(2)}%</div>
+            <div className={Math.abs(sum - 100) <= 0.01 ? 'pos small' : 'warn small'}>Sum: {+sum.toFixed(2)}%{cashAdded > 0 && <> — the remaining <b>{+cashAdded.toFixed(4)}%</b> goes to {emojiOf(CASH)} CASH (CASH {+allocRec[CASH].toFixed(4)}% in total)</>}</div>
             <div className="dim small" style={{ marginTop: 10 }}>Current RSPS part:</div>
             <label>{emojiOf(CASH)} RSPS cash<div className="field"><input inputMode="decimal" value={rspsCash} onChange={(e) => setRspsCash(e.target.value)} /><span className="unit">USD</span></div></label>
             <PairRows rows={units} setRows={setUnits} options={TOKENS.map((t) => t.sym)} unit="units" placeholder="0" extra={(u) => <span className="val">{usd(n(u.v) * px(u.sym), 2)}</span>} />
@@ -176,8 +179,21 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
                 : !live ? 'Editing an older signal does not change Portfolio holdings.' : null}
           </div>
           <button className="btn ghost" onClick={onClose}>Cancel</button>
-          <button className="btn gold" disabled={errors.length > 0 || nothing} onClick={save}>Save signal</button>
+          <button className="btn gold" disabled={errors.length > 0 || nothing} onClick={() => save()}>Save signal</button>
         </div>
+        {confirmCash && (
+          <div className="overlay confirm-overlay" onClick={() => setConfirmCash(false)}>
+            <div className="modal confirm-box" role="alertdialog" aria-labelledby="cash-confirm-title" onClick={(e) => e.stopPropagation()}>
+              <h3 id="cash-confirm-title">Save with this allocation?</h3>
+              <div>The coins add up to <b>{+(100 - cashAdded).toFixed(4)}%</b>. The remaining <b>{+cashAdded.toFixed(4)}%</b> will be kept as {emojiOf(CASH)} <b>CASH</b>.</div>
+              <div className="dim small">{allocText(allocRec)}</div>
+              <div className="row-btns">
+                <button className="btn ghost" onClick={() => setConfirmCash(false)}>Back</button>
+                <button className="btn gold" onClick={() => { setConfirmCash(false); save(true); }}>Yes, save</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

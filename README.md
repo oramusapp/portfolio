@@ -71,7 +71,7 @@ więc przetrwają odświeżenie i restart przeglądarki. Cała historia jest odt
 
 - **Add Signal**: sygnał na bieżący dzień UTC. SDCA: kupno/sprzedaż w % + cash SDCA i posiadane BTC;
   aplikacja pokazuje kwotę kupna (z cashu SDCA) albo ilość BTC do sprzedaży i obcina zlecenie do dostępnego cashu/BTC.
-  RSPS: docelowa alokacja (walidacja sumy = 100%, tylko tokeny z listy) + obecny cash RSPS i ilości tokenów;
+  RSPS: docelowa alokacja (tylko tokeny z listy; suma poniżej 100% — reszta automatycznie trafia do CASH i aplikacja pyta o potwierdzenie przed zapisem; powyżej 100% — błąd) + obecny cash RSPS i ilości tokenów;
   aplikacja pokazuje dla każdego aktywa BUY/SELL w %, w $ i w sztukach. Formularz jest wstępnie wypełniony stanem przeniesionym z poprzedniego dnia.
 - **Okienko „New signal today”** osobno dla SDCA i RSPS: zaznaczone = wpisujesz sygnał; niezaznaczone = ta strategia zostaje bez zmian
   (bez zleceń, holdings bez zmian, w historii „SDCA dup” / „RSPS dup”). Gdy żadne nie jest zaznaczone, nic się nie zapisuje i dzień jest DUPLICATED.

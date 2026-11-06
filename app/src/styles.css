@@ -338,3 +338,7 @@ table.mini.info-table td.r { white-space: nowrap; }
 .ord-row .field { width: 96px; } .ord-row .field input { min-width: 0; }
 .ord-row .tiny { margin-left: auto; }
 table.mini td.wrap { white-space: normal; }
+.confirm-overlay { z-index: 20; place-items: center; }
+.confirm-box { width: min(420px, 100%); gap: 12px; }
+.confirm-box h3 { margin: 0; }
+.row-btns { display: flex; gap: 8px; justify-content: flex-end; }

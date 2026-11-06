@@ -74,6 +74,15 @@ export function allocError(alloc: Record<string, number>, allowed: (s: string) =
   return null;
 }
 
+/** An allocation that sums to less than 100% (but more than 0%): the rest goes to CASH. Returns the filled allocation and
+ *  how many % were added (0 = unchanged). Over 100%, or all zero, is left as it is for allocError to report. */
+export function fillCash(alloc: Record<string, number>): { alloc: Record<string, number>; added: number } {
+  const sum = Object.values(alloc).reduce((t, v) => t + (Number.isFinite(v) ? v : NaN), 0);
+  const rest = Math.round((100 - sum) * 1e6) / 1e6;
+  if (!(sum > 0) || !(rest > 0.01)) return { alloc, added: 0 };
+  return { alloc: { ...alloc, [CASH]: (alloc[CASH] ?? 0) + rest }, added: rest };
+}
+
 export interface RebalanceRow {
   sym: string; price: number; curUnits: number; curUsd: number; curPct: number;
   tgtPct: number; tgtUsd: number; deltaUsd: number; deltaPct: number; deltaUnits: number;
