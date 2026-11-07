@@ -40,7 +40,7 @@ export function PairRows({ rows, setRows, options, unit, placeholder, extra, sid
           <input inputMode="decimal" value={r.v} placeholder={placeholder} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, v: e.target.value } : x)))} />
           <span className="unit">{unit}</span>
           {sides && r.sym !== CASH && (
-            <button type="button" className={`ls ${r.short ? 'short' : 'long'}`} aria-pressed={!!r.short} title={r.short ? 'Short — tap for long' : 'Long — tap for short'}
+            <button type="button" className={`ls ${r.short ? 'short' : 'long'}`} aria-pressed={!!r.short} title={r.short ? 'Short (perp, 1× leverage) — tap for long' : 'Long — tap for short (perp, 1× leverage)'}
               onClick={() => setRows(rows.map((x, j) => (j === i ? { ...x, short: !x.short } : x)))}>{r.short ? 'SHORT' : 'LONG'}</button>
           )}
           {extra?.(r)}
@@ -170,7 +170,7 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
             <div className="dim small">Target allocation (100%; anything left under 100% goes to {emojiOf(CASH)} CASH). Tap LONG / SHORT to switch a coin's side:</div>
             <PairRows rows={alloc} setRows={setAlloc} options={ALL_ASSETS} unit="%" placeholder="0" sides />
             <div className={Math.abs(sum - 100) <= 0.01 ? 'pos small' : 'warn small'}>Sum: {+sum.toFixed(2)}%{cashAdded > 0 && <> — the remaining <b>{+cashAdded.toFixed(4)}%</b> goes to {emojiOf(CASH)} CASH (CASH {+allocRec[CASH].toFixed(4)}% in total)</>}</div>
-            {shorts.length > 0 && <div className="dim small">Short {+shorts.reduce((t, r) => t + n(r.v), 0).toFixed(2)}%: sold now and bought back later, so it gains when the price falls. The sale proceeds stay in RSPS cash. No borrow fees or funding are counted.</div>}
+            {shorts.length > 0 && <div className="dim small">Short {+shorts.reduce((t, r) => t + n(r.v), 0).toFixed(2)}% as a perpetual short at <b>1× leverage</b> (margin = position size): it gains when the price falls and loses when it rises. Funding and liquidation are not counted.</div>}
             <div className="dim small" style={{ marginTop: 10 }}>Current RSPS part:</div>
             <label>{emojiOf(CASH)} RSPS cash<div className="field"><input inputMode="decimal" value={rspsCash} onChange={(e) => setRspsCash(e.target.value)} /><span className="unit">USD</span></div></label>
             <PairRows rows={units} setRows={setUnits} options={TOKENS.map((t) => t.sym)} unit="units" placeholder="0" sides extra={(u) => <span className="val">{usd(signed(u) * px(u.sym), 2)}</span>} />

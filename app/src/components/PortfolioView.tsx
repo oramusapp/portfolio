@@ -84,7 +84,7 @@ export function PortfolioView({ sdca, rsps, book, today, positions, onClose }: {
         </div>
         <Strategy title="SDCA" rows={sd} total={total} positions={positions} year={year} />
         <Strategy title="RSPS" rows={rs} total={total} positions={positions} year={year} />
-        <div className="dim small">A SHORT shows as a negative amount and value; its sale proceeds are in the cash line, and its avg price is the average entry price. Avg price and realized P/L are worked out from the saved signals at their execution prices; coins typed in without a trade count at that day's price. Values are in USD — for a tax return (e.g. PIT-38) convert each trade at the official exchange rate; this is a helper, not tax advice.</div>
+        <div className="dim small">A SHORT is a perpetual short at 1× leverage: it shows as a negative amount and value, its margin and entry value are in the cash line, and its avg price is the average entry price. Avg price and realized P/L are worked out from the saved signals at their execution prices; coins typed in without a trade count at that day's price. Values are in USD — for a tax return (e.g. PIT-38) convert each trade at the official exchange rate; this is a helper, not tax advice.</div>
       </div>
     </div>
   );

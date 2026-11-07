@@ -76,7 +76,7 @@ export function RebalanceView({ p, live, partLabel = 'RSPS part', liveText }: { 
           </table>
         )}
       {sells.length > 0 && buys.length > 0 && <div className="dim small">Sell first, then buy with the proceeds.</div>}
-      <div className="cash-line">{emojiOf(CASH)} Cash: {usd(cash.curUsd, 2)} → <b>{usd(p.after.cash, 2)}</b> <span className="dim">({cash.tgtPct.toFixed(1)}% of {partLabel === 'RSPS part' ? 'RSPS' : 'portfolio'}{hasShort ? ', including the proceeds of the shorts' : ''})</span></div>
+      <div className="cash-line">{emojiOf(CASH)} Cash: {usd(cash.curUsd, 2)} → <b>{usd(p.after.cash, 2)}</b> <span className="dim">({cash.tgtPct.toFixed(1)}% of {partLabel === 'RSPS part' ? 'RSPS' : 'portfolio'}{hasShort ? ', including the margin of the 1× shorts' : ''})</span></div>
       {p.fee > 0 && <div className="dim small">Fees ≈ {usd(p.fee, 2)} — taken proportionally from the new holdings.</div>}
       {p.missing.length > 0 && <div className="warn small">Missing price: {p.missing.join(', ')}</div>}
     </div>
