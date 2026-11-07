@@ -13,9 +13,10 @@ function lines(assets: [string, number][], book: PriceBook, today: string, posit
   return assets.map(([sym, units]) => {
     if (sym === CASH) return { sym, units, price: 1, value: units, change: 0, pnl: 0, avg: NaN, upl: NaN };
     const p = priceOn(book, sym, today), p0 = priceOn(book, sym, yday);
-    const pos = positions[`${strat}:${sym}`], avg = pos && pos.units > 0 ? pos.cost / pos.units : NaN;
+    // short: units < 0 and cost < 0, so cost / units is the average entry price and units × (p − avg) its unrealized P/L
+    const pos = positions[`${strat}:${sym}`], avg = pos && pos.units !== 0 && Math.sign(pos.units) === Math.sign(units) ? pos.cost / pos.units : NaN;
     return { sym, units, price: p, value: units * p, change: p / p0 - 1, pnl: units * (p - p0), avg, upl: units * (p - avg) };
-  }).sort((a, b) => (a.sym === CASH ? 1 : b.sym === CASH ? -1 : b.value - a.value));
+  }).sort((a, b) => (a.sym === CASH ? 1 : b.sym === CASH ? -1 : Math.abs(b.value) - Math.abs(a.value)));
 }
 
 const amount = (sym: string, v: number) =>
@@ -39,15 +40,15 @@ function Strategy({ title, rows, total, positions, year }: { title: 'SDCA' | 'RS
       {!rows.length ? <div className="dim small">Nothing held.</div> : (
         <div className="table-wrap">
           <table className="mini pv">
-            <thead><tr><th>Asset</th><th className="r">Amount</th><th className="r">Price</th><th className="r">Value</th><th className="r">Allocation</th><th className="r">Today</th><th className="r">Day P/L</th><th className="r">Avg buy</th><th className="r">Unrealized</th></tr></thead>
+            <thead><tr><th>Asset</th><th className="r">Amount</th><th className="r">Price</th><th className="r">Value</th><th className="r">Allocation</th><th className="r">Today</th><th className="r">Day P/L</th><th className="r">Avg price</th><th className="r">Unrealized</th></tr></thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.sym}>
-                  <td className="pv-asset">{emojiOf(r.sym)} <b>{r.sym}</b></td>
+                  <td className="pv-asset">{emojiOf(r.sym)} <b>{r.sym}</b>{r.units < 0 && <span className="tag short">SHORT</span>}</td>
                   <td className="r" data-label="Amount">{amount(r.sym, r.units)}</td>
                   <td className="r dim" data-label="Price">{r.sym === CASH ? '—' : price(r.price)}</td>
                   <td className="r" data-label="Value">{usd(r.value, 2)}</td>
-                  <td className="r" data-label="Allocation"><div className="alloc-cell"><i style={{ width: `${value > 0 ? (r.value / value) * 100 : 0}%` }} />{value > 0 ? ((r.value / value) * 100).toFixed(1) : '0.0'}%</div></td>
+                  <td className="r" data-label="Allocation"><div className="alloc-cell"><i style={{ width: `${value > 0 ? Math.min(100, (Math.abs(r.value) / value) * 100) : 0}%` }} />{value > 0 ? ((r.value / value) * 100).toFixed(1) : '0.0'}%</div></td>
                   <td className={`r ${tone(r.change)}`} data-label="Today">{r.sym === CASH ? '—' : pct(r.change, 2)}</td>
                   <td className={`r ${tone(r.pnl)}`} data-label="Day P/L">{r.sym === CASH ? '—' : `${r.pnl >= 0 ? '+' : ''}${usd(r.pnl, 2)}`}</td>
                   <td className="r dim" data-label="Avg buy">{Number.isFinite(r.avg) ? price(r.avg) : '—'}</td>
@@ -66,7 +67,7 @@ function Strategy({ title, rows, total, positions, year }: { title: 'SDCA' | 'RS
 export function PortfolioView({ sdca, rsps, book, today, positions, onClose }: { sdca: SdcaState; rsps: RspsState; book: PriceBook; today: string; positions: Positions; onClose: () => void }) {
   const year = today.slice(0, 4);
   const sd = lines([['BTC', sdca.btc], [CASH, sdca.cash]].filter(([, u]) => (u as number) > 0) as [string, number][], book, today, positions, 'SDCA');
-  const rs = lines([...Object.entries(rsps.units), [CASH, rsps.cash] as [string, number]].filter(([, u]) => u > 0), book, today, positions, 'RSPS');
+  const rs = lines([...Object.entries(rsps.units), [CASH, rsps.cash] as [string, number]].filter(([, u]) => u !== 0), book, today, positions, 'RSPS');
   const total = [...sd, ...rs].reduce((t, r) => t + r.value, 0);
   const pnl = [...sd, ...rs].reduce((t, r) => t + r.pnl, 0);
   return (
@@ -83,7 +84,7 @@ export function PortfolioView({ sdca, rsps, book, today, positions, onClose }: {
         </div>
         <Strategy title="SDCA" rows={sd} total={total} positions={positions} year={year} />
         <Strategy title="RSPS" rows={rs} total={total} positions={positions} year={year} />
-        <div className="dim small">Avg buy and realized P/L are worked out from the saved signals at their execution prices; coins typed in without a trade count at that day's price. Values are in USD — for a tax return (e.g. PIT-38) convert each trade at the official exchange rate; this is a helper, not tax advice.</div>
+        <div className="dim small">A SHORT shows as a negative amount and value; its sale proceeds are in the cash line, and its avg price is the average entry price. Avg price and realized P/L are worked out from the saved signals at their execution prices; coins typed in without a trade count at that day's price. Values are in USD — for a tax return (e.g. PIT-38) convert each trade at the official exchange rate; this is a helper, not tax advice.</div>
       </div>
     </div>
   );

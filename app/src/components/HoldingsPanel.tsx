@@ -3,7 +3,7 @@ import { priceOn, type PriceBook } from '../lib/prices';
 import { CASH, TOKENS, emojiOf } from '../lib/tokens';
 import type { SdcaState, RspsState } from '../lib/engine';
 import { num, price, usd } from '../lib/format';
-import { PairRows, toPairs, n, type Pair } from './SignalForm';
+import { PairRows, toPairs, n, signed, type Pair } from './SignalForm';
 import { IcClose } from './icons';
 
 export interface Holdings { sdca: SdcaState; rsps: RspsState; updatedAt: number; }
@@ -30,7 +30,7 @@ export function HoldingsPanel({ initial, book, today, onNeed, onSave, onClose, f
 
   const btcValue = n(btc) * px('BTC');
   const sdcaTotal = btcValue + n(sdcaCash);
-  const tokenValue = (u: Pair) => n(u.v) * px(u.sym);
+  const tokenValue = (u: Pair) => signed(u) * px(u.sym);   // a short counts as negative
   const rspsTotal = units.reduce((t, u) => t + (n(u.v) > 0 ? tokenValue(u) : 0), n(rspsCash));
   const bad = [btc, sdcaCash, rspsCash, ...units.map((u) => u.v)].some((v) => !(n(v) >= 0));
 
@@ -38,7 +38,7 @@ export function HoldingsPanel({ initial, book, today, onNeed, onSave, onClose, f
     if (bad) return;
     onSave({
       sdca: { btc: n(btc), cash: n(sdcaCash) },
-      rsps: { cash: n(rspsCash), units: Object.fromEntries(units.filter((u) => n(u.v) > 0).map((u) => [u.sym, n(u.v)])) },
+      rsps: { cash: n(rspsCash), units: Object.fromEntries(units.filter((u) => n(u.v) > 0).map((u) => [u.sym, signed(u)])) },
       updatedAt: Date.now()
     });
   };
@@ -63,10 +63,10 @@ export function HoldingsPanel({ initial, book, today, onNeed, onSave, onClose, f
           <div className="card pane">
             <h3>RSPS <span className="right">{usd(rspsTotal, 2)}</span></h3>
             <div className="dim small">Tokens and amounts:</div>
-            <PairRows rows={units} setRows={setUnits} options={TOKENS.map((t) => t.sym)} unit="units" placeholder="0"
+            <PairRows rows={units} setRows={setUnits} options={TOKENS.map((t) => t.sym)} unit="units" placeholder="0" sides
               extra={(u) => <span className="val">{usd(tokenValue(u), 2)}</span>} />
             <label>{emojiOf(CASH)} Cash reserve<div className="field"><input inputMode="decimal" value={rspsCash} onChange={(e) => setRspsCash(e.target.value)} /><span className="unit">USD</span></div></label>
-            {units.length > 0 && <div className="dim small">{units.map((u) => `${u.sym} ${num(n(u.v), 6)} @ ${price(px(u.sym))}`).join(' · ')}</div>}
+            {units.length > 0 && <div className="dim small">{units.map((u) => `${u.sym} ${u.short ? 'short ' : ''}${num(n(u.v), 6)} @ ${price(px(u.sym))}`).join(' · ')}</div>}
           </div>
         </div>
 

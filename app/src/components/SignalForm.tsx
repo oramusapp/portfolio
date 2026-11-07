@@ -14,9 +14,13 @@ interface Props {
 
 const fmtUnits = (v: number) => (v >= 1000 ? v.toLocaleString('en-US', { maximumFractionDigits: 2 }) : v.toLocaleString('en-US', { maximumFractionDigits: 8 }));
 
-export type Pair = { sym: string; v: string };
-export const toPairs = (r: Record<string, number>) => Object.entries(r).map(([sym, v]) => ({ sym, v: String(+v.toFixed(8)) }));
+/** short = the amount is a short position (RSPS only); `v` is always typed as a positive number. */
+export type Pair = { sym: string; v: string; short?: boolean };
+export const toPairs = (r: Record<string, number>) =>
+  Object.entries(r).map(([sym, v]) => ({ sym, v: String(+Math.abs(v).toFixed(8)), ...(v < 0 ? { short: true } : {}) }));
 export const n = (s: string) => (s.trim() === '' ? 0 : Number(s.replace(',', '.')));
+/** Signed value of a row: a short counts as negative. */
+export const signed = (r: Pair) => (r.short && r.sym !== CASH ? -1 : 1) * n(r.v);
 
 function AssetSelect({ value, options, onChange }: { value: string; options: string[]; onChange: (s: string) => void }) {
   return (
@@ -26,7 +30,7 @@ function AssetSelect({ value, options, onChange }: { value: string; options: str
   );
 }
 
-export function PairRows({ rows, setRows, options, unit, placeholder, extra }: { rows: Pair[]; setRows: (r: Pair[]) => void; options: string[]; unit: string; placeholder: string; extra?: (r: Pair) => ReactNode }) {
+export function PairRows({ rows, setRows, options, unit, placeholder, extra, sides }: { rows: Pair[]; setRows: (r: Pair[]) => void; options: string[]; unit: string; placeholder: string; extra?: (r: Pair) => ReactNode; sides?: boolean }) {
   const free = (keep: string) => options.filter((s) => s === keep || !rows.some((r) => r.sym === s));
   return (
     <div className="pairs">
@@ -35,6 +39,10 @@ export function PairRows({ rows, setRows, options, unit, placeholder, extra }: {
           <AssetSelect value={r.sym} options={free(r.sym)} onChange={(sym) => setRows(rows.map((x, j) => (j === i ? { ...x, sym } : x)))} />
           <input inputMode="decimal" value={r.v} placeholder={placeholder} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, v: e.target.value } : x)))} />
           <span className="unit">{unit}</span>
+          {sides && r.sym !== CASH && (
+            <button type="button" className={`ls ${r.short ? 'short' : 'long'}`} aria-pressed={!!r.short} title={r.short ? 'Short — tap for long' : 'Long — tap for short'}
+              onClick={() => setRows(rows.map((x, j) => (j === i ? { ...x, short: !x.short } : x)))}>{r.short ? 'SHORT' : 'LONG'}</button>
+          )}
           {extra?.(r)}
           <button className="icon" onClick={() => setRows(rows.filter((_, j) => j !== i))} title="Remove"><IcTrash width={16} /></button>
         </div>
@@ -70,22 +78,24 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
   const pctNum = n(sdcaPct);
   const sdcaInput = { pct: side === 'sell' ? -pctNum : pctNum, cash: n(sdcaCash), btc: n(sdcaBtc) };
   // under 100% the rest goes to CASH automatically (confirmed on save)
-  const { alloc: allocRec, added: cashAdded } = fillCash(Object.fromEntries(alloc.map((r) => [r.sym, n(r.v)])));
+  const { alloc: allocRec, added: cashAdded } = fillCash(Object.fromEntries(alloc.map((r) => [r.sym, signed(r)])));
   const [confirmCash, setConfirmCash] = useState(false);
-  const unitsRec = Object.fromEntries(units.filter((r) => n(r.v) > 0).map((r) => [r.sym, n(r.v)]));
+  const unitsRec = Object.fromEntries(units.filter((r) => n(r.v) > 0).map((r) => [r.sym, signed(r)]));
   const rspsInput = { alloc: allocRec, cash: n(rspsCash), units: unitsRec };
 
   const btcPx = px('BTC');
   const order = useMemo(() => (Number.isFinite(btcPx) ? sdcaOrder(sdcaInput, btcPx, fee) : null), [btcPx, side, sdcaPct, sdcaCash, sdcaBtc, fee]); // eslint-disable-line react-hooks/exhaustive-deps
   const plan = rebalance(rspsInput, px, fee);
-  const sum = alloc.reduce((s, r) => s + n(r.v), 0);
+  const sum = alloc.reduce((s, r) => s + n(r.v), 0);   // shorts count with their size
+  const shorts = alloc.filter((r) => r.short && r.sym !== CASH && n(r.v) > 0);
 
   const errors: string[] = [];
   if (sdcaNew && (!Number.isFinite(pctNum) || pctNum < 0 || pctNum > 100)) errors.push('SDCA signal must be between 0% and 100%.');
   if (sdcaNew && side === 'buy' && pctNum > 0 && pctNum < MIN_SDCA_BUY_PCT) errors.push(`Minimum SDCA buy is ${MIN_SDCA_BUY_PCT}% of the SDCA cash reserve.`);
   if (!(sdcaInput.cash >= 0) || !(sdcaInput.btc >= 0)) errors.push('SDCA cash and BTC must be ≥ 0.');
-  if (!(rspsInput.cash >= 0) || Object.values(unitsRec).some((v) => !(v >= 0))) errors.push('RSPS holdings must be ≥ 0.');
-  const ae = rspsNew ? allocError(allocRec) : null; if (ae) errors.push(`RSPS: ${ae}`);
+  if (!(rspsInput.cash >= 0) || units.some((r) => !(n(r.v) >= 0))) errors.push('RSPS holdings must be ≥ 0 (use SHORT for a short position).');
+  if (alloc.some((r) => !(n(r.v) >= 0))) errors.push('RSPS: type the % as a positive number and use LONG / SHORT for the side.');
+  const ae = rspsNew ? allocError(allocRec, undefined, undefined, true) : null; if (ae) errors.push(`RSPS: ${ae}`);
   if (!Number.isFinite(btcPx)) errors.push('No BTC price yet (still loading).');
   if (rspsNew && plan.missing.length) errors.push(`No price for ${plan.missing.join(', ')} yet (still loading).`);
   const nothing = !sdcaNew && !rspsNew;
@@ -100,7 +110,7 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
     onSave({
       date, createdAt: Date.now(), px: snapshot, sdcaNew, rspsNew, fee,
       sdca: sdcaNew ? sdcaInput : { ...sdcaInput, pct: 0 },
-      rsps: { alloc: rspsNew ? Object.fromEntries(Object.entries(allocRec).filter(([, v]) => v > 0)) : initial.rsps.alloc, cash: rspsInput.cash, units: unitsRec }
+      rsps: { alloc: rspsNew ? Object.fromEntries(Object.entries(allocRec).filter(([, v]) => v !== 0)) : initial.rsps.alloc, cash: rspsInput.cash, units: unitsRec }
     });
   };
 
@@ -157,12 +167,13 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
                 <div className="dim small">Tick “New signal today” to enter a new allocation.</div>
               </div>
             ) : <>
-            <div className="dim small">Target allocation (100%; anything left under 100% goes to {emojiOf(CASH)} CASH):</div>
-            <PairRows rows={alloc} setRows={setAlloc} options={ALL_ASSETS} unit="%" placeholder="0" />
+            <div className="dim small">Target allocation (100%; anything left under 100% goes to {emojiOf(CASH)} CASH). Tap LONG / SHORT to switch a coin's side:</div>
+            <PairRows rows={alloc} setRows={setAlloc} options={ALL_ASSETS} unit="%" placeholder="0" sides />
             <div className={Math.abs(sum - 100) <= 0.01 ? 'pos small' : 'warn small'}>Sum: {+sum.toFixed(2)}%{cashAdded > 0 && <> — the remaining <b>{+cashAdded.toFixed(4)}%</b> goes to {emojiOf(CASH)} CASH (CASH {+allocRec[CASH].toFixed(4)}% in total)</>}</div>
+            {shorts.length > 0 && <div className="dim small">Short {+shorts.reduce((t, r) => t + n(r.v), 0).toFixed(2)}%: sold now and bought back later, so it gains when the price falls. The sale proceeds stay in RSPS cash. No borrow fees or funding are counted.</div>}
             <div className="dim small" style={{ marginTop: 10 }}>Current RSPS part:</div>
             <label>{emojiOf(CASH)} RSPS cash<div className="field"><input inputMode="decimal" value={rspsCash} onChange={(e) => setRspsCash(e.target.value)} /><span className="unit">USD</span></div></label>
-            <PairRows rows={units} setRows={setUnits} options={TOKENS.map((t) => t.sym)} unit="units" placeholder="0" extra={(u) => <span className="val">{usd(n(u.v) * px(u.sym), 2)}</span>} />
+            <PairRows rows={units} setRows={setUnits} options={TOKENS.map((t) => t.sym)} unit="units" placeholder="0" sides extra={(u) => <span className="val">{usd(signed(u) * px(u.sym), 2)}</span>} />
             <h4 style={{ marginTop: 12 }}>Orders</h4>
             <RebalanceView p={plan} live={live} />
             </>}
