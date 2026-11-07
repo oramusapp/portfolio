@@ -1,4 +1,4 @@
-import type { SdcaState, RspsState, Positions } from '../lib/engine';
+import { liqPrice, type SdcaState, type RspsState, type Positions } from '../lib/engine';
 import { priceOn, type PriceBook } from '../lib/prices';
 import { CASH, emojiOf } from '../lib/tokens';
 import { addDays } from '../lib/utc';
@@ -22,7 +22,10 @@ function lines(assets: [string, number][], book: PriceBook, today: string, posit
 const amount = (sym: string, v: number) =>
   sym === CASH ? usd(v, 2) : v >= 1000 ? v.toLocaleString('en-US', { maximumFractionDigits: 2 }) : v.toLocaleString('en-US', { maximumFractionDigits: 8 });
 
-function Strategy({ title, rows, total, positions, year }: { title: 'SDCA' | 'RSPS'; rows: Line[]; total: number; positions: Positions; year: string }) {
+/** Open shorts (perp 1×): average entry and maintenance margin → liquidation price; funding per coin in total. */
+export interface ShortInfo { entry: Record<string, number>; mm: Record<string, number>; funding: Record<string, number>; }
+
+function Strategy({ title, rows, total, positions, year, shorts }: { title: 'SDCA' | 'RSPS'; rows: Line[]; total: number; positions: Positions; year: string; shorts?: ShortInfo }) {
   const own = Object.entries(positions).filter(([k]) => k.startsWith(`${title}:`)).map(([, p]) => p);
   const realized = own.reduce((t, p) => t + p.realized, 0), realizedYear = own.reduce((t, p) => t + (p.realizedByYear[year] ?? 0), 0);
   const value = rows.reduce((t, r) => t + r.value, 0);
@@ -44,7 +47,8 @@ function Strategy({ title, rows, total, positions, year }: { title: 'SDCA' | 'RS
             <tbody>
               {rows.map((r) => (
                 <tr key={r.sym}>
-                  <td className="pv-asset">{emojiOf(r.sym)} <b>{r.sym}</b>{r.units < 0 && <span className="tag short">SHORT</span>}</td>
+                  <td className="pv-asset">{emojiOf(r.sym)} <b>{r.sym}</b>{r.units < 0 && <span className="tag short">SHORT</span>}
+                    {r.units < 0 && shorts && Number.isFinite(shorts.entry[r.sym]) && <span className="pv-liq">perp 1× · liq. {price(liqPrice(shorts.entry[r.sym], shorts.mm[r.sym]))}</span>}</td>
                   <td className="r" data-label="Amount">{amount(r.sym, r.units)}</td>
                   <td className="r dim" data-label="Price">{r.sym === CASH ? '—' : price(r.price)}</td>
                   <td className="r" data-label="Value">{usd(r.value, 2)}</td>
@@ -59,12 +63,16 @@ function Strategy({ title, rows, total, positions, year }: { title: 'SDCA' | 'RS
           </table>
         </div>
       )}
-      <div className="dim small">Realized P/L: <span className={tone(realizedYear)}>{usd(realizedYear, 2)}</span> in {year} · <span className={tone(realized)}>{usd(realized, 2)}</span> in total (average-cost method, after fees, USD)</div>
+      <div className="dim small">Realized P/L: <span className={tone(realizedYear)}>{usd(realizedYear, 2)}</span> in {year} · <span className={tone(realized)}>{usd(realized, 2)}</span> in total (average-cost method, after fees, USD{shorts ? '; shorts: funding and liquidations included' : ''})</div>
+      {shorts && Object.keys(shorts.funding).length > 0 && (() => {
+        const f = Object.values(shorts.funding).reduce((t, v) => t + v, 0);
+        return <div className="dim small">Funding of the shorts: <span className={tone(f)}>{f >= 0 ? '+' : ''}{usd(f, 2)}</span> in total ({Object.entries(shorts.funding).filter(([, v]) => Math.abs(v) >= 0.005).map(([k, v]) => `${k} ${v >= 0 ? '+' : ''}${usd(v, 2)}`).join(' · ') || '—'})</div>;
+      })()}
     </div>
   );
 }
 
-export function PortfolioView({ sdca, rsps, book, today, positions, onClose }: { sdca: SdcaState; rsps: RspsState; book: PriceBook; today: string; positions: Positions; onClose: () => void }) {
+export function PortfolioView({ sdca, rsps, book, today, positions, shorts, onClose }: { sdca: SdcaState; rsps: RspsState; book: PriceBook; today: string; positions: Positions; shorts?: ShortInfo; onClose: () => void }) {
   const year = today.slice(0, 4);
   const sd = lines([['BTC', sdca.btc], [CASH, sdca.cash]].filter(([, u]) => (u as number) > 0) as [string, number][], book, today, positions, 'SDCA');
   const rs = lines([...Object.entries(rsps.units), [CASH, rsps.cash] as [string, number]].filter(([, u]) => u !== 0), book, today, positions, 'RSPS');
@@ -83,8 +91,8 @@ export function PortfolioView({ sdca, rsps, book, today, positions, onClose }: {
           <span><b>{usd(total, 2)}</b> <span className={tone(pnl)}>{pnl >= 0 ? '+' : ''}{usd(pnl, 2)} ({pct(pnl / (total - pnl), 2)}) today</span></span>
         </div>
         <Strategy title="SDCA" rows={sd} total={total} positions={positions} year={year} />
-        <Strategy title="RSPS" rows={rs} total={total} positions={positions} year={year} />
-        <div className="dim small">A SHORT is a perpetual short at 1× leverage: it shows as a negative amount and value, its margin and entry value are in the cash line, and its avg price is the average entry price. Avg price and realized P/L are worked out from the saved signals at their execution prices; coins typed in without a trade count at that day's price. Values are in USD — for a tax return (e.g. PIT-38) convert each trade at the official exchange rate; this is a helper, not tax advice.</div>
+        <Strategy title="RSPS" rows={rs} total={total} positions={positions} year={year} shorts={shorts} />
+        <div className="dim small">A SHORT is a perpetual short at 1× leverage: it shows as a negative amount and value, its margin and entry value are in the cash line, and its avg price is the average entry price. Funding (Hyperliquid hourly rates) is added to cash; a short is liquidated when the day's high reaches “liq.” and its margin is then lost. Avg price and realized P/L are worked out from the saved signals at their execution prices; coins typed in without a trade count at that day's price. Values are in USD — for a tax return (e.g. PIT-38) convert each trade at the official exchange rate; this is a helper, not tax advice.</div>
       </div>
     </div>
   );

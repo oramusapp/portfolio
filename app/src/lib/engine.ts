@@ -11,7 +11,11 @@
 //   that size, held as negative units; margin and entry value both sit in RSPS cash, so the part's value
 //   (cash + units × price) is unchanged at entry and moves by −size × price change, exactly as a 1× perp.
 //   The % used for shorts counts towards the 100% like a long (|weight|).
-//   Funding payments and liquidation (at 1× roughly when the price doubles) are not modelled.
+// • Funding (Hyperliquid, hourly): each day the short gets −units × close × Σ that day's funding rates (positive rate:
+//   longs pay shorts). It counts as performance and as realized P/L.
+// • Liquidation (1×, isolated): when the day's high reaches 2 × entry / (1 + MM) — MM = maintenance margin = half the
+//   initial margin at the coin's max leverage — the short is closed and its whole margin is lost (conservative: the
+//   small rest of the margin is not returned). Entry = average entry price of the short.
 // • On days without a new signal (DUPLICATED) the previous allocation is carried forward by keeping the units as they are
 //   (no daily re-rebalance), so weights drift with prices.
 // • Day return = value at close D / value at close D-1 of the holdings held during D (time-weighted), so differences between
@@ -142,21 +146,43 @@ export interface DayRow {
   r: number; rSdca: number; rRsps: number; btcDay: number;
   totalGain: number; sdcaGain: number; rspsGain: number;
   invested: number; missing: string[];
+  fundingUsd: number;                                          // funding of the shorts that day (+ received, − paid)
+  liquidations: Liquidation[];                                 // shorts liquidated that day
 }
+export interface Liquidation { date: string; sym: string; units: number; entry: number; price: number; loss: number; }
+export interface PerpEvent { date: string; sym: string; kind: 'funding' | 'liq'; usd: number; units?: number; }
 export interface Simulation {
   start: string; rows: DayRow[]; sdca: SdcaState; rsps: RspsState;
+  events: PerpEvent[];                                         // funding per day and coin + liquidations (for cost basis)
+  shortEntry: Record<string, number>;                          // average entry price of the open shorts
 }
+/** Perp data for the shorts (Hyperliquid): daily highs, funding (sum of the hourly rates per UTC day) and maintenance margin. */
+export interface PerpData { high: PriceBook; funding: Record<string, Record<string, number>>; mm: Record<string, number>; }
+export const DEFAULT_MM = 0.1;   // when the coin's max leverage is unknown: 5× → 20% initial, 10% maintenance
+/** Price at which a 1× isolated short with this entry is liquidated. */
+export const liqPrice = (entry: number, mm = DEFAULT_MM) => (2 * entry) / (1 + mm);
 
 const ret = (v1: number, v0: number) => (v0 > EPS && Number.isFinite(v1 / v0) ? v1 / v0 - 1 : 0);
 
 /** Replays every signal from the first one up to `today`. `start` is the day before the first signal (0% on the chart). */
-export function simulate(signals: Signal[], book: PriceBook, today: string): Simulation | null {
+export function simulate(signals: Signal[], book: PriceBook, today: string, perp?: PerpData): Simulation | null {
   const sorted = [...signals].sort(bySignalOrder);
   if (!sorted.length) return null;
   const byDate = new Map<string, Signal[]>();
   for (const s of sorted) byDate.set(s.date, [...(byDate.get(s.date) ?? []), s]);
   const start = addDays(sorted[0].date, -1);
   let sd: SdcaState = { cash: 0, btc: 0 }, rs: RspsState = { cash: 0, units: {} };
+  const entry: Record<string, number> = {};   // average entry of each open short
+  const events: PerpEvent[] = [];
+  /** After an execution: keep the average entry of the shorts (new short = execution price, bigger short = weighted). */
+  const trackEntry = (before: Record<string, number>, after: Record<string, number>, pe: (s: string) => number) => {
+    for (const sym of new Set([...Object.keys(before), ...Object.keys(after), ...Object.keys(entry)])) {
+      const u0 = Math.min(before[sym] ?? 0, 0), u1 = after[sym] ?? 0;
+      if (!(u1 < -EPS)) { delete entry[sym]; continue; }
+      const e0 = entry[sym] ?? pe(sym);
+      entry[sym] = -u1 > -u0 + EPS ? (e0 * -u0 + pe(sym) * (-u1 + u0)) / -u1 : e0;
+    }
+  };
   let active = sorted[0], idx = 1, iSd = 1, iRs = 1, invested = 0, started = false;
   const rows: DayRow[] = [];
   for (const d of daysBetween(sorted[0].date, today < sorted[0].date ? sorted[0].date : today)) {
@@ -179,7 +205,34 @@ export function simulate(signals: Signal[], book: PriceBook, today: string): Sim
       if (Number.isFinite(typed - carried)) invested += typed - carried;
       const ex = executeSignal(sig, pe);
       execs.push({ signal: sig, sdca: ex.order, rsps: ex.plan });
+      trackEntry(sig.rsps.units, ex.rsps.units, pe);
       sd = ex.sdca; rs = ex.rsps; from = pe; started = true;
+    }
+    // shorts during the day: liquidation (day's high), then funding on what is still open
+    let fundingUsd = 0;
+    const liquidations: Liquidation[] = [];
+    if (started) {
+      for (const [sym, u] of Object.entries(rs.units)) {
+        if (!(u < -EPS)) continue;
+        const e = entry[sym] ?? from(sym);
+        if (!Number.isFinite(e)) continue;
+        const hi = perp?.high[sym]?.[d] ?? p1(sym), lp = liqPrice(e, perp?.mm[sym]);
+        if (Number.isFinite(hi) && hi >= lp) {
+          const loss = 2 * e * -u;   // the cash held for this short (margin + entry value) is used up
+          rs = { cash: rs.cash - loss, units: Object.fromEntries(Object.entries(rs.units).filter(([k]) => k !== sym)) };
+          liquidations.push({ date: d, sym, units: u, entry: e, price: lp, loss: e * -u });
+          events.push({ date: d, sym, kind: 'liq', usd: loss, units: -u });
+          delete entry[sym];
+          continue;
+        }
+        const rate = perp?.funding[sym]?.[d];
+        const px1 = p1(sym);
+        if (rate !== undefined && Number.isFinite(px1)) {
+          const f = -u * px1 * rate;
+          rs = { ...rs, cash: rs.cash + f }; fundingUsd += f;
+          events.push({ date: d, sym, kind: 'funding', usd: f });
+        }
+      }
     }
     const lastEx = execs.at(-1);
     const s0 = sdcaValue(sd, from('BTC')), s1 = sdcaValue(sd, p1('BTC'));
@@ -192,10 +245,11 @@ export function simulate(signals: Signal[], book: PriceBook, today: string): Sim
       value: s1 + r1, sdcaValue: s1, rspsValue: r1,
       r, rSdca, rRsps, btcDay: ret(p1('BTC'), p0('BTC')),
       totalGain: idx - 1, sdcaGain: iSd - 1, rspsGain: iRs - 1, invested,
-      missing: held.filter((s) => !Number.isFinite(p0(s)) || !Number.isFinite(p1(s)))
+      missing: held.filter((s) => !Number.isFinite(p0(s)) || !Number.isFinite(p1(s))),
+      fundingUsd, liquidations
     });
   }
-  return { start, rows, sdca: sd, rsps: rs };
+  return { start, rows, sdca: sd, rsps: rs, events, shortEntry: { ...entry } };
 }
 
 /** Buy & hold of one token from the close of `start`: % change per day. */
@@ -239,7 +293,7 @@ export type Positions = Record<string, Position>;   // key 'SDCA:BTC' or 'RSPS:S
  *  their average cost (no P/L). Realized P/L = sell value − average cost, after fees.
  *  Shorts: units < 0 and cost = −(sale proceeds), so cost / units is the average entry price; covering realizes
  *  proceeds − cost of buying back. */
-export function costBasis(signals: Signal[], book: PriceBook): Positions {
+export function costBasis(signals: Signal[], book: PriceBook, events: PerpEvent[] = []): Positions {
   const pos: Positions = {};
   const P = (k: string) => (pos[k] ??= { units: 0, cost: 0, realized: 0, realizedByYear: {} });
   /** d = change in units (+ buy, − sell), usd = cash paid (buy) or received (sell) for the whole trade, > 0;
@@ -258,7 +312,18 @@ export function costBasis(signals: Signal[], book: PriceBook): Positions {
   };
   const add = (k: string, units: number, cost: number, year: string) => trade(k, units, cost, year, true);
   const remove = (k: string, units: number, proceeds: number | null, year: string) => trade(k, -units, proceeds ?? 0, year, proceeds !== null);
+  // funding and liquidations happen during the day, after that day's signals
+  let ei = 0;
+  const evs = [...events].sort((a, b) => a.date.localeCompare(b.date));
+  const applyEvents = (upTo: string) => {
+    for (; ei < evs.length && evs[ei].date < upTo; ei++) {
+      const ev = evs[ei], k = `RSPS:${ev.sym}`, year = ev.date.slice(0, 4), p = P(k);
+      if (ev.kind === 'funding') { p.realized += ev.usd; p.realizedByYear[year] = (p.realizedByYear[year] ?? 0) + ev.usd; }
+      else if (ev.units) trade(k, ev.units, ev.usd, year, true);   // bought back with the whole margin → loss = margin
+    }
+  };
   for (const sig of [...signals].sort(bySignalOrder)) {
+    applyEvents(sig.date);
     const prev = addDays(sig.date, -1), year = sig.date.slice(0, 4);
     const pe = (s: string) => sig.px?.[s] ?? priceOn(book, s, prev);
     const fee = sig.fee ?? 0;
@@ -281,5 +346,6 @@ export function costBasis(signals: Signal[], book: PriceBook): Positions {
       }
     }
   }
+  applyEvents('9999-12-31');
   return pos;
 }
