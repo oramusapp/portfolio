@@ -7,10 +7,11 @@
 // • SDCA: BUY x% = x% of the SDCA cash reserve (1% of $100 = BTC for $1); SELL x% = x% of the BTC held. 0–100%, so it can
 //   never spend more cash or sell more BTC than the SDCA part has.
 // • RSPS: the target % applies to the whole RSPS part (tokens + RSPS cash), so spare RSPS cash is spread over the signal.
-// • RSPS SHORT: a negative target (e.g. OP −5%) is a short of that size. It is held as negative units; the sale proceeds
-//   stay in RSPS cash, so the part's value (cash + units × price) is unchanged at entry and rises when the price falls.
-//   The % used for shorts counts towards the 100% like a long (|weight|), and its collateral stays in cash.
-//   No borrow fees or funding are modelled.
+// • RSPS SHORT = a perpetual short at 1× leverage: margin = position size. A negative target (e.g. OP −5%) is a short of
+//   that size, held as negative units; margin and entry value both sit in RSPS cash, so the part's value
+//   (cash + units × price) is unchanged at entry and moves by −size × price change, exactly as a 1× perp.
+//   The % used for shorts counts towards the 100% like a long (|weight|).
+//   Funding payments and liquidation (at 1× roughly when the price doubles) are not modelled.
 // • On days without a new signal (DUPLICATED) the previous allocation is carried forward by keeping the units as they are
 //   (no daily re-rebalance), so weights drift with prices.
 // • Day return = value at close D / value at close D-1 of the holdings held during D (time-weighted), so differences between
