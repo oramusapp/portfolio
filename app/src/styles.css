@@ -146,6 +146,14 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color:
 .seg button.on { background: var(--hover); font-weight: 600; } .seg button.on.pos { color: var(--pos); } .seg button.on.neg { color: var(--neg); }
 .pairs { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .pair { display: flex; gap: 6px; align-items: center; width: 100%; } .pair select { width: 140px; } .pair input { flex: 1; min-width: 0; }
+/* LONG / SHORT switch in the RSPS rows (crypto only); a short is sold now and bought back later */
+.pair .ls { flex: 0 0 auto; min-width: 54px; padding: 6px 7px; border-radius: 8px; border: 1px solid var(--line); background: transparent; font-size: 11px; font-weight: 700; letter-spacing: .4px; cursor: pointer; }
+.pair .ls.long { color: var(--pos); }
+.pair .ls.short { color: var(--neg); border-color: var(--neg); background: var(--badge-sell); }
+.tag.short { margin-left: 6px; font-size: 10px; font-weight: 700; letter-spacing: .4px; padding: 1px 6px; border-radius: 5px; color: var(--neg); background: var(--badge-sell); }
+/* rows with the LONG / SHORT switch: a narrower asset list so the amount field keeps a usable width on phones */
+.pair:has(.ls) input { min-width: 64px; }
+@media (max-width: 560px) { .pair:has(.ls) select { width: 108px; } .pair .ls { min-width: 50px; padding: 6px 5px; } }
 .modal.narrow .pair select { width: 118px; } .modal.narrow .pair input { min-width: 90px; }
 .val { color: var(--dim); font-size: 13px; min-width: 84px; text-align: right; white-space: nowrap; }
 .total-row { display: flex; justify-content: space-between; align-items: center; font-size: 18px; padding: 0 4px; gap: 10px; flex-wrap: wrap; }

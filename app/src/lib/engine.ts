@@ -7,6 +7,10 @@
 // • SDCA: BUY x% = x% of the SDCA cash reserve (1% of $100 = BTC for $1); SELL x% = x% of the BTC held. 0–100%, so it can
 //   never spend more cash or sell more BTC than the SDCA part has.
 // • RSPS: the target % applies to the whole RSPS part (tokens + RSPS cash), so spare RSPS cash is spread over the signal.
+// • RSPS SHORT: a negative target (e.g. OP −5%) is a short of that size. It is held as negative units; the sale proceeds
+//   stay in RSPS cash, so the part's value (cash + units × price) is unchanged at entry and rises when the price falls.
+//   The % used for shorts counts towards the 100% like a long (|weight|), and its collateral stays in cash.
+//   No borrow fees or funding are modelled.
 // • On days without a new signal (DUPLICATED) the previous allocation is carried forward by keeping the units as they are
 //   (no daily re-rebalance), so weights drift with prices.
 // • Day return = value at close D / value at close D-1 of the holdings held during D (time-weighted), so differences between
@@ -62,22 +66,26 @@ export function sdcaOrder(inp: SdcaInput, price: number, fee = 0): SdcaOrder {
 export const MIN_SDCA_BUY_PCT = 1;
 
 // ---------- RSPS ----------
-export function allocError(alloc: Record<string, number>, allowed: (s: string) => boolean = isAllowed, listName = 'RSPS list'): string | null {
+/** allowShort: negative weights (shorts) are accepted for every asset except CASH; the 100% counts |weight|. */
+export function allocError(alloc: Record<string, number>, allowed: (s: string) => boolean = isAllowed, listName = 'RSPS list', allowShort = false): string | null {
   const keys = Object.keys(alloc);
   if (!keys.length) return 'Add at least one asset.';
   for (const k of keys) {
     if (!allowed(k)) return `${k} is not on the ${listName}.`;
-    if (!Number.isFinite(alloc[k]) || alloc[k] < 0) return `${k}: allocation must be ≥ 0%.`;
+    if (!Number.isFinite(alloc[k])) return `${k}: allocation must be a number.`;
+    if (alloc[k] < 0 && k === CASH) return 'CASH cannot be short.';
+    if (alloc[k] < 0 && !allowShort) return `${k}: allocation must be ≥ 0%.`;
   }
-  const sum = keys.reduce((s, k) => s + alloc[k], 0);
+  const sum = keys.reduce((s, k) => s + Math.abs(alloc[k]), 0);
   if (Math.abs(sum - 100) > 0.01) return `Allocation sums to ${sum.toFixed(2)}% — it must be exactly 100%.`;
   return null;
 }
 
 /** An allocation that sums to less than 100% (but more than 0%): the rest goes to CASH. Returns the filled allocation and
- *  how many % were added (0 = unchanged). Over 100%, or all zero, is left as it is for allocError to report. */
+ *  how many % were added (0 = unchanged). Over 100%, or all zero, is left as it is for allocError to report.
+ *  Shorts count with their size (|weight|). */
 export function fillCash(alloc: Record<string, number>): { alloc: Record<string, number>; added: number } {
-  const sum = Object.values(alloc).reduce((t, v) => t + (Number.isFinite(v) ? v : NaN), 0);
+  const sum = Object.values(alloc).reduce((t, v) => t + (Number.isFinite(v) ? Math.abs(v) : NaN), 0);
   const rest = Math.round((100 - sum) * 1e6) / 1e6;
   if (!(sum > 0) || !(rest > 0.01)) return { alloc, added: 0 };
   return { alloc: { ...alloc, [CASH]: (alloc[CASH] ?? 0) + rest }, added: rest };
@@ -89,15 +97,20 @@ export interface RebalanceRow {
 }
 export interface RebalancePlan { total: number; rows: RebalanceRow[]; after: RspsState; missing: string[]; fee: number; }
 
-/** fee = fraction of the traded value (token sells + buys); it is taken proportionally from the resulting holdings. */
+/** fee = fraction of the traded value (token sells + buys); it is taken proportionally from the resulting holdings.
+ *  A negative target is a short: negative units, and cash = CASH% + the collateral and the sale proceeds of the shorts
+ *  (2 × their size), so cash + Σ units × price = the part's value. Long-only allocations give the same result as before. */
 export function rebalance(inp: RspsInput, px: (sym: string) => number, fee = 0): RebalancePlan {
   const syms = [...new Set([CASH, ...Object.keys(inp.units), ...Object.keys(inp.alloc)])];
   const missing = syms.filter((s) => !Number.isFinite(px(s)));
   const cur = (s: string) => (s === CASH ? inp.cash : inp.units[s] ?? 0);
   const total = syms.reduce((t, s) => t + (missing.includes(s) ? 0 : cur(s) * px(s)), 0);
+  const shortUsd = Object.entries(inp.alloc).reduce((t, [s, v]) => t + (s !== CASH && v < 0 ? -total * v / 100 : 0), 0);
+  const cashTgt = total * (inp.alloc[CASH] ?? 0) / 100 + 2 * shortUsd;
   const rows: RebalanceRow[] = syms.map((sym) => {
     const price = px(sym), curUnits = cur(sym), curUsd = curUnits * price;
-    const tgtPct = inp.alloc[sym] ?? 0, tgtUsd = total * tgtPct / 100, deltaUsd = tgtUsd - curUsd;
+    const tgtUsd = sym === CASH ? cashTgt : total * (inp.alloc[sym] ?? 0) / 100;
+    const tgtPct = total > 0 ? tgtUsd / total * 100 : inp.alloc[sym] ?? 0, deltaUsd = tgtUsd - curUsd;
     return {
       sym, price, curUnits, curUsd, curPct: total > 0 ? curUsd / total * 100 : 0, tgtPct, tgtUsd,
       deltaUsd, deltaPct: total > 0 ? deltaUsd / total * 100 : 0, deltaUnits: deltaUsd / price
@@ -106,8 +119,8 @@ export function rebalance(inp: RspsInput, px: (sym: string) => number, fee = 0):
   const feeUsd = fee * rows.filter((r) => r.sym !== CASH).reduce((t, r) => t + Math.abs(r.deltaUsd), 0);
   const k = total > 0 && Number.isFinite(feeUsd) ? (total - feeUsd) / total : 1;
   const units: Record<string, number> = {};
-  for (const r of rows) if (r.sym !== CASH && r.tgtUsd > EPS) units[r.sym] = r.tgtUsd * k / r.price;
-  return { total, rows, after: { cash: total * (inp.alloc[CASH] ?? 0) / 100 * k, units }, missing, fee: Number.isFinite(feeUsd) ? feeUsd : 0 };
+  for (const r of rows) if (r.sym !== CASH && Math.abs(r.tgtUsd) > EPS) units[r.sym] = r.tgtUsd * k / r.price;
+  return { total, rows, after: { cash: cashTgt * k, units }, missing, fee: Number.isFinite(feeUsd) ? feeUsd : 0 };
 }
 
 // ---------- valuation / simulation ----------
@@ -222,18 +235,28 @@ export type Positions = Record<string, Position>;   // key 'SDCA:BTC' or 'RSPS:S
 
 /** Average-cost basis per strategy and coin, replayed from the signals at their execution prices. Coins that appear
  *  without a trade (typed-in holdings) are taken in at that day's execution price; ones that disappear leave at
- *  their average cost (no P/L). Realized P/L = sell value − average cost, after fees. */
+ *  their average cost (no P/L). Realized P/L = sell value − average cost, after fees.
+ *  Shorts: units < 0 and cost = −(sale proceeds), so cost / units is the average entry price; covering realizes
+ *  proceeds − cost of buying back. */
 export function costBasis(signals: Signal[], book: PriceBook): Positions {
   const pos: Positions = {};
   const P = (k: string) => (pos[k] ??= { units: 0, cost: 0, realized: 0, realizedByYear: {} });
-  const add = (k: string, units: number, cost: number) => { const p = P(k); p.units += units; p.cost += cost; };
-  const remove = (k: string, units: number, proceeds: number | null, year: string) => {
-    const p = P(k); if (p.units <= EPS) return;
-    const u = Math.min(units, p.units), basis = p.cost * (u / p.units);
-    p.units -= u; p.cost -= basis;
-    if (proceeds !== null) { const pl = proceeds * (u / units) - basis; p.realized += pl; p.realizedByYear[year] = (p.realizedByYear[year] ?? 0) + pl; }
-    if (p.units <= EPS) { p.units = 0; p.cost = 0; }
+  /** d = change in units (+ buy, − sell), usd = cash paid (buy) or received (sell) for the whole trade, > 0;
+   *  realize = false for typed-in holdings (transfers, no P/L). */
+  const trade = (k: string, d: number, usd: number, year: string, realize: boolean) => {
+    const p = P(k), sign = Math.sign(d);
+    let left = Math.abs(d);
+    if (p.units !== 0 && Math.sign(p.units) !== sign) {   // closing (part of) the position
+      const u = Math.min(left, Math.abs(p.units)), basis = p.cost * (u / Math.abs(p.units)), share = usd * (u / Math.abs(d));
+      const pl = p.units > 0 ? share - basis : -basis - share;
+      p.units += sign * u; p.cost -= basis; left -= u;
+      if (realize) { p.realized += pl; p.realizedByYear[year] = (p.realizedByYear[year] ?? 0) + pl; }
+      if (Math.abs(p.units) <= EPS) { p.units = 0; p.cost = 0; }
+    }
+    if (left > EPS) { p.units += sign * left; p.cost += sign * usd * (left / Math.abs(d)); }   // opening / adding
   };
+  const add = (k: string, units: number, cost: number, year: string) => trade(k, units, cost, year, true);
+  const remove = (k: string, units: number, proceeds: number | null, year: string) => trade(k, -units, proceeds ?? 0, year, proceeds !== null);
   for (const sig of [...signals].sort(bySignalOrder)) {
     const prev = addDays(sig.date, -1), year = sig.date.slice(0, 4);
     const pe = (s: string) => sig.px?.[s] ?? priceOn(book, s, prev);
@@ -241,18 +264,18 @@ export function costBasis(signals: Signal[], book: PriceBook): Positions {
     // holdings typed in vs what the replay holds → transfers in / out
     const adjust = (k: string, typed: number, price: number) => {
       const d = typed - (pos[k]?.units ?? 0);
-      if (d > EPS) add(k, d, d * price); else if (d < -EPS) remove(k, -d, null, year);
+      if (Math.abs(d) > EPS) trade(k, d, Math.abs(d) * price, year, false);
     };
     adjust('SDCA:BTC', sig.sdca.btc, pe('BTC'));
     const rspsSyms = new Set([...Object.keys(sig.rsps.units), ...Object.keys(pos).filter((k) => k.startsWith('RSPS:')).map((k) => k.slice(5))]);
     for (const s of rspsSyms) adjust(`RSPS:${s}`, sig.rsps.units[s] ?? 0, pe(s));
     const ex = executeSignal(sig, pe);
-    if (ex.order.side === 'buy') add('SDCA:BTC', ex.order.btc, ex.order.usd);
+    if (ex.order.side === 'buy') add('SDCA:BTC', ex.order.btc, ex.order.usd, year);
     if (ex.order.side === 'sell') remove('SDCA:BTC', ex.order.btc, ex.order.usd, year);
     if (ex.plan) {
       for (const s of new Set([...Object.keys(sig.rsps.units), ...Object.keys(ex.rsps.units)])) {
         const d = (ex.rsps.units[s] ?? 0) - (sig.rsps.units[s] ?? 0);
-        if (d > EPS) add(`RSPS:${s}`, d, d * pe(s) / (1 - fee || 1));
+        if (d > EPS) add(`RSPS:${s}`, d, d * pe(s) / (1 - fee || 1), year);
         else if (d < -EPS) remove(`RSPS:${s}`, -d, -d * pe(s) * (1 - fee), year);
       }
     }

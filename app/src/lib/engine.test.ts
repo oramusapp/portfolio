@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allocError, fillCash, rebalance, sdcaOrder, simulate, benchmark, type Signal } from './engine';
+import { allocError, costBasis, fillCash, rebalance, sdcaOrder, simulate, benchmark, type Signal } from './engine';
 import type { PriceBook } from './prices';
 
 describe('SDCA', () => {
@@ -124,5 +124,61 @@ describe('fillCash', () => {
     const { alloc } = fillCash({ OP: 5, ICP: 5, ARB: 5, SUI: 5, SHIB: 5, DASH: 5, ALGO: 5, FIL: 5, INJ: 2.5, XMR: 2.5 });
     expect(alloc.CASH).toBe(55);
     expect(allocError(alloc)).toBeNull();
+  });
+});
+
+describe('RSPS short', () => {
+  const px = (p: Record<string, number>) => (s: string) => ({ CASH: 1, ...p } as Record<string, number>)[s];
+  it('accepts shorts only where allowed, never for CASH, and counts |weight| towards 100%', () => {
+    expect(allocError({ OP: -50, CASH: 50 }, undefined, undefined, true)).toBeNull();
+    expect(allocError({ OP: -50, CASH: 50 })).toMatch(/≥ 0%/);                       // stocks / default: no shorts
+    expect(allocError({ OP: 50, CASH: -50 }, undefined, undefined, true)).toMatch(/CASH cannot be short/);
+    expect(allocError({ OP: -50, ARB: -50 }, undefined, undefined, true)).toBeNull();
+    expect(allocError({ OP: -60, ARB: 60 }, undefined, undefined, true)).toMatch(/120\.00%/);
+  });
+  it('fills the rest with CASH using the size of the shorts', () => {
+    const f = fillCash({ OP: -5, ICP: -5, INJ: -2.5 });
+    expect(f.added).toBeCloseTo(87.5); expect(f.alloc.CASH).toBeCloseTo(87.5);
+  });
+  it('opens a short as negative units, keeps the proceeds in cash and the value unchanged', () => {
+    const p = rebalance({ alloc: { OP: -50, CASH: 50 }, cash: 1000, units: {} }, px({ OP: 10 }));
+    expect(p.after.units.OP).toBeCloseTo(-50);
+    expect(p.after.cash).toBeCloseTo(1500);
+    expect(p.after.cash + p.after.units.OP * 10).toBeCloseTo(1000);
+  });
+  it('gains when the price falls and loses when it rises (50% short)', () => {
+    const { after } = rebalance({ alloc: { OP: -50, CASH: 50 }, cash: 1000, units: {} }, px({ OP: 10 }));
+    expect(after.cash + after.units.OP * 5).toBeCloseTo(1250);    // −50% price → +25%
+    expect(after.cash + after.units.OP * 12).toBeCloseTo(900);    // +20% price → −10%
+  });
+  it('covers and flips: from a short to a long', () => {
+    const p = rebalance({ alloc: { OP: 40, CASH: 60 }, cash: 1500, units: { OP: -50 } }, px({ OP: 10 }));   // value 1000
+    expect(p.total).toBeCloseTo(1000);
+    expect(p.after.units.OP).toBeCloseTo(40); expect(p.after.cash).toBeCloseTo(600);
+  });
+  it('mixes longs and shorts and keeps the value', () => {
+    const p = rebalance({ alloc: { SOL: 30, OP: -20, CASH: 50 }, cash: 1000, units: {} }, px({ SOL: 100, OP: 2 }));
+    const v = p.after.cash + p.after.units.SOL * 100 + p.after.units.OP * 2;
+    expect(v).toBeCloseTo(1000); expect(p.after.units.SOL).toBeCloseTo(3); expect(p.after.units.OP).toBeCloseTo(-100);
+  });
+  it('takes the fee from the value, also on shorts', () => {
+    const p = rebalance({ alloc: { OP: -50, CASH: 50 }, cash: 1000, units: {} }, px({ OP: 10 }), 0.001);
+    expect(p.fee).toBeCloseTo(0.5);
+    expect(p.after.cash + p.after.units.OP * 10).toBeCloseTo(999.5);
+  });
+  it('realizes the P/L of a short when it is covered (average entry price)', () => {
+    const book: PriceBook = {};
+    const base = { createdAt: 1, sdcaNew: false, sdca: { pct: 0, cash: 0, btc: 0 } };
+    const s1: Signal = { ...base, date: '2026-01-02', px: { OP: 10 }, rsps: { alloc: { OP: -50, CASH: 50 }, cash: 1000, units: {} } };
+    const s2: Signal = { ...base, createdAt: 2, date: '2026-01-05', px: { OP: 8 }, rsps: { alloc: { CASH: 100 }, cash: 1500, units: { OP: -50 } } };
+    const one = costBasis([s1], book)['RSPS:OP'];
+    expect(one.units).toBeCloseTo(-50); expect(one.cost / one.units).toBeCloseTo(10);   // average entry 10
+    const two = costBasis([s1, s2], book)['RSPS:OP'];
+    expect(two.units).toBe(0); expect(two.realized).toBeCloseTo(100);                  // sold at 10, bought back at 8
+    expect(two.realizedByYear['2026']).toBeCloseTo(100);
+  });
+  it('a long-only allocation gives the same plan as before', () => {
+    const p = rebalance({ alloc: { ETH: 10, SOL: 40, CASH: 50 }, cash: 0, units: { SOL: 100 } }, px({ ETH: 2000, SOL: 100 }));
+    expect(p.after.cash).toBeCloseTo(5000); expect(p.after.units.SOL).toBeCloseTo(40); expect(p.after.units.ETH).toBeCloseTo(0.5);
   });
 });

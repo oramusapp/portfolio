@@ -8,8 +8,8 @@ import { IcChevron, IcPen, IcPlus, IcTrash } from './icons';
 const PAGE = 10;   // history rows shown at a time
 
 export const allocText = (alloc: Record<string, number>) =>
-  Object.entries(alloc).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1])
-    .map(([k, v]) => `${emojiOf(k)} ${k} ${+v.toFixed(2)}%`).join(' · ');
+  Object.entries(alloc).filter(([, v]) => v !== 0).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+    .map(([k, v]) => `${emojiOf(k)} ${k} ${+Math.abs(v).toFixed(2)}%${v < 0 ? ' SHORT' : ''}`).join(' · ');
 
 export const sdcaText = (p: number) => (p > 0 ? `BTC buy ${p}%` : p < 0 ? `BTC sell ${-p}%` : 'BTC hold');
 
@@ -46,16 +46,24 @@ export function RebalanceView({ p, live, partLabel = 'RSPS part', liveText }: { 
   const tokens = p.rows.filter((r) => r.sym !== CASH);
   const sells = tokens.filter((r) => r.deltaUsd < -MIN_USD).sort((a, b) => a.deltaUsd - b.deltaUsd);
   const buys = tokens.filter((r) => r.deltaUsd > MIN_USD).sort((a, b) => b.deltaUsd - a.deltaUsd);
-  const holds = tokens.filter((r) => Math.abs(r.deltaUsd) <= MIN_USD && r.tgtPct > 0);
-  const row = (r: RebalanceRow, side: 'SELL' | 'BUY' | 'HOLD') => (
-    <tr key={r.sym}>
-      <td><span className={`badge ${side.toLowerCase()}`}>{side}</span></td>
-      <td>{emojiOf(r.sym)} <b>{side === 'HOLD' ? '' : unitsAmt(Math.abs(r.deltaUnits))} {r.sym}</b></td>
-      <td>{side === 'HOLD' ? '—' : `${side === 'SELL' ? '≈ ' : ''}${usd(Math.abs(r.deltaUsd), 2)}`}</td>
-      <td className="dim">{r.curPct.toFixed(1)}% → {r.tgtPct.toFixed(1)}%</td>
-      <td className="dim">{price(r.price)}</td>
-    </tr>
-  );
+  const holds = tokens.filter((r) => Math.abs(r.deltaUsd) <= MIN_USD && r.tgtPct !== 0);
+  const hasShort = tokens.some((r) => r.tgtUsd < -MIN_USD || r.curUnits < 0);
+  // a sell from no / a short position opens or adds to a short; a buy while short covers it
+  const label = (r: RebalanceRow, side: 'SELL' | 'BUY' | 'HOLD') =>
+    side === 'SELL' && r.curUnits <= 0 ? 'SHORT' : side === 'BUY' && r.curUnits < 0 ? 'COVER' : side;
+  const pctTxt = (v: number) => `${Math.abs(v).toFixed(1)}%${v < -0.05 ? ' short' : ''}`;
+  const row = (r: RebalanceRow, side: 'SELL' | 'BUY' | 'HOLD') => {
+    const lab = label(r, side);
+    return (
+      <tr key={r.sym}>
+        <td><span className={`badge ${lab === 'SHORT' ? 'sell short' : lab === 'COVER' ? 'buy cover' : side.toLowerCase()}`}>{lab}</span></td>
+        <td>{emojiOf(r.sym)} <b>{side === 'HOLD' ? '' : unitsAmt(Math.abs(r.deltaUnits))} {r.sym}</b></td>
+        <td>{side === 'HOLD' ? '—' : `${side === 'SELL' ? '≈ ' : ''}${usd(Math.abs(r.deltaUsd), 2)}`}</td>
+        <td className="dim">{pctTxt(r.curPct)} → {pctTxt(r.tgtPct)}</td>
+        <td className="dim">{price(r.price)}</td>
+      </tr>
+    );
+  };
   return (
     <div className="order">
       <div className="dim small">{partLabel} {usd(p.total, 2)} = {partLabel === 'RSPS part' ? 'tokens' : 'positions'} {usd(p.total - cash.curUsd, 2)} + cash {usd(cash.curUsd, 2)} · prices {liveText ?? (live ? 'live' : 'at save')}</div>
@@ -68,7 +76,7 @@ export function RebalanceView({ p, live, partLabel = 'RSPS part', liveText }: { 
           </table>
         )}
       {sells.length > 0 && buys.length > 0 && <div className="dim small">Sell first, then buy with the proceeds.</div>}
-      <div className="cash-line">{emojiOf(CASH)} Cash: {usd(cash.curUsd, 2)} → <b>{usd(p.after.cash, 2)}</b> <span className="dim">({cash.tgtPct.toFixed(1)}% of {partLabel === 'RSPS part' ? 'RSPS' : 'portfolio'})</span></div>
+      <div className="cash-line">{emojiOf(CASH)} Cash: {usd(cash.curUsd, 2)} → <b>{usd(p.after.cash, 2)}</b> <span className="dim">({cash.tgtPct.toFixed(1)}% of {partLabel === 'RSPS part' ? 'RSPS' : 'portfolio'}{hasShort ? ', including the proceeds of the shorts' : ''})</span></div>
       {p.fee > 0 && <div className="dim small">Fees ≈ {usd(p.fee, 2)} — taken proportionally from the new holdings.</div>}
       {p.missing.length > 0 && <div className="warn small">Missing price: {p.missing.join(', ')}</div>}
     </div>
