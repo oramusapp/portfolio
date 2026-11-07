@@ -94,7 +94,7 @@ export function SignalHistory({ rows, today, hasToday, resetIn, onAdd, onEdit, o
   // long histories: newest first, PAGE rows at a time, optionally only the days with a signal
   const [signalsOnly, setSignalsOnly] = usePersisted<boolean>('history.signalsOnly', false);
   const [shown, setShown] = useState(PAGE);
-  const all = [...rows].reverse().filter((r) => !signalsOnly || !r.duplicated);
+  const all = [...rows].reverse().filter((r) => !signalsOnly || !r.duplicated || r.liquidations.length > 0);   // a liquidation always shows
   const list = all.slice(0, shown);
   const dupCount = rows.filter((r) => r.duplicated).length;
   return (
@@ -128,6 +128,7 @@ export function SignalHistory({ rows, today, hasToday, resetIn, onAdd, onEdit, o
                       {!r.duplicated && r.signal.rspsNew === false && <span className="sdca-chip">RSPS dup</span>}
                     </>}
                     {r.duplicated ? <span className="tag dup">DUPLICATED</span> : <span className="tag sig">Signal <IcChevron width={14} className={open === r.date ? 'flip' : ''} /></span>}
+                    {r.liquidations.map((l) => <span key={l.sym} className="tag liq">LIQUIDATED {l.sym} short</span>)}
                   </td>
                   <td className={`r ${tone(r.r)}`}>{pct(r.r)}</td>
                   <td className={`r ${tone(r.btcDay)}`}>{pct(r.btcDay)}</td>
@@ -149,6 +150,10 @@ export function SignalHistory({ rows, today, hasToday, resetIn, onAdd, onEdit, o
                       <span><b>RSPS</b> <span className={tone(r.rRsps)}>{pct(r.rRsps)} day</span> · <span className={tone(r.rspsGain)}>{pct(r.rspsGain)} total</span> · {usd(r.rspsValue, 2)}</span>
                     </div>
                     {r.duplicated && <div className="dim">Carried from the signal of {r.signal.date}: no trades.</div>}
+                    {r.liquidations.map((l) => (
+                      <div key={l.sym} className="liq-line"><span className="badge sell">LIQUIDATED</span>{emojiOf(l.sym)} <b>{unitsAmt(-l.units)} {l.sym}</b> short (perp 1×): the day's high reached the liquidation price {price(l.price)} (entry {price(l.entry)}). The margin <b>{usd(l.loss, 2)}</b> is lost.</div>
+                    ))}
+                    {Math.abs(r.fundingUsd) >= 0.005 && <div className="dim small">Funding of the shorts: <span className={tone(r.fundingUsd)}>{r.fundingUsd >= 0 ? '+' : ''}{usd(r.fundingUsd, 2)}</span> {r.fundingUsd >= 0 ? 'received' : 'paid'} (Hyperliquid hourly rates).</div>}
                     {r.execs.map((ex, i) => (
                       <div className="exec" key={i}>
                         {r.execs.length > 1 && (

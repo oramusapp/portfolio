@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allocError, costBasis, fillCash, rebalance, sdcaOrder, simulate, benchmark, type Signal } from './engine';
+import { allocError, costBasis, fillCash, liqPrice, rebalance, sdcaOrder, simulate, benchmark, type PerpData, type Signal } from './engine';
 import type { PriceBook } from './prices';
 
 describe('SDCA', () => {
@@ -180,5 +180,58 @@ describe('RSPS short', () => {
   it('a long-only allocation gives the same plan as before', () => {
     const p = rebalance({ alloc: { ETH: 10, SOL: 40, CASH: 50 }, cash: 0, units: { SOL: 100 } }, px({ ETH: 2000, SOL: 100 }));
     expect(p.after.cash).toBeCloseTo(5000); expect(p.after.units.SOL).toBeCloseTo(40); expect(p.after.units.ETH).toBeCloseTo(0.5);
+  });
+});
+
+describe('RSPS short: funding and liquidation (perp 1×)', () => {
+  // OP short 50% of 1000 at 10 on 2026-01-02; prices by day
+  const btc = { '2026-01-01': 1, '2026-01-02': 1, '2026-01-03': 1, '2026-01-04': 1 };
+  const book: PriceBook = { BTC: btc, OP: { '2026-01-01': 10, '2026-01-02': 10, '2026-01-03': 10, '2026-01-04': 10 } };
+  const sig: Signal = { date: '2026-01-02', createdAt: 1, sdcaNew: false, px: { OP: 10 }, sdca: { pct: 0, cash: 0, btc: 0 }, rsps: { alloc: { OP: -50, CASH: 50 }, cash: 1000, units: {} } };
+  const perp = (p: Partial<PerpData>): PerpData => ({ high: {}, funding: {}, mm: {}, ...p });
+
+  it('liquidation price of a 1× short: 2 × entry / (1 + MM)', () => {
+    expect(liqPrice(10, 0.1)).toBeCloseTo(18.1818);
+    expect(liqPrice(10, 0.05)).toBeCloseTo(19.0476);
+  });
+  it('a positive funding rate pays the short, a negative one costs it', () => {
+    const s = simulate([sig], book, '2026-01-04', perp({ funding: { OP: { '2026-01-03': 0.001, '2026-01-04': -0.0005 } } }))!;
+    const d3 = s.rows.find((r) => r.date === '2026-01-03')!, d4 = s.rows.find((r) => r.date === '2026-01-04')!;
+    expect(d3.fundingUsd).toBeCloseTo(0.5);       // 50 OP × 10 × 0.1%
+    expect(d4.fundingUsd).toBeCloseTo(-0.25);
+    expect(d4.value).toBeCloseTo(1000.25);
+    expect(s.events.filter((e) => e.kind === 'funding')).toHaveLength(2);
+  });
+  it('liquidates the short when the day high reaches the liquidation price and loses the margin', () => {
+    const s = simulate([sig], book, '2026-01-04', perp({ high: { OP: { '2026-01-03': 18.5 } }, mm: { OP: 0.1 } }))!;
+    const d3 = s.rows.find((r) => r.date === '2026-01-03')!;
+    expect(d3.liquidations).toHaveLength(1);
+    expect(d3.liquidations[0].price).toBeCloseTo(18.1818); expect(d3.liquidations[0].loss).toBeCloseTo(500);
+    expect(s.rsps.units.OP).toBeUndefined();
+    expect(d3.value).toBeCloseTo(500);            // 1000 − the 500 margin of the short
+    expect(s.rows.at(-1)!.value).toBeCloseTo(500);
+  });
+  it('does not liquidate below the liquidation price', () => {
+    const s = simulate([sig], book, '2026-01-04', perp({ high: { OP: { '2026-01-03': 18 } }, mm: { OP: 0.1 } }))!;
+    expect(s.rows.every((r) => r.liquidations.length === 0)).toBe(true);
+    expect(s.rsps.units.OP).toBeCloseTo(-50); expect(s.shortEntry.OP).toBeCloseTo(10);
+  });
+  it('averages the entry when a short is increased', () => {
+    const b2: PriceBook = { BTC: btc, OP: { '2026-01-01': 10, '2026-01-02': 10, '2026-01-03': 12, '2026-01-04': 12 } };
+    // value at 12: 1500 − 600 = 900 → short 100% = 75 OP; 25 more OP shorted at 12 → entry (50×10 + 25×12) / 75
+    const s2: Signal = { date: '2026-01-03', createdAt: 2, sdcaNew: false, px: { OP: 12 }, sdca: { pct: 0, cash: 0, btc: 0 }, rsps: { alloc: { OP: -100 }, cash: 1500, units: { OP: -50 } } };
+    const s = simulate([sig, s2], b2, '2026-01-04')!;
+    expect(s.rsps.units.OP).toBeCloseTo(-75); expect(s.shortEntry.OP).toBeCloseTo(10.6667);
+  });
+  it('a 1× short is liquidated when the price doubles, even without perp data (close used as the high)', () => {
+    const b3: PriceBook = { BTC: btc, OP: { '2026-01-01': 10, '2026-01-02': 10, '2026-01-03': 20, '2026-01-04': 20 } };
+    const s = simulate([sig], b3, '2026-01-04')!;
+    expect(s.rsps.units.OP).toBeUndefined(); expect(s.rows.at(-1)!.value).toBeCloseTo(500);
+  });
+  it('books funding and the liquidation loss as realized P/L', () => {
+    const s = simulate([sig], book, '2026-01-04', perp({ funding: { OP: { '2026-01-03': 0.001 } }, high: { OP: { '2026-01-04': 19 } }, mm: { OP: 0.1 } }))!;
+    const pos = costBasis([sig], book, s.events)['RSPS:OP'];
+    expect(pos.units).toBe(0);
+    expect(pos.realized).toBeCloseTo(0.5 - 500);
   });
 });

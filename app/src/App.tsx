@@ -10,6 +10,7 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { RemindersDue } from './components/RemindersDue';
 import { dueFor, localToday, type Reminder } from './lib/reminders';
 import { usePrices } from './lib/usePrices';
+import { usePerp } from './lib/usePerp';
 import { CASH, TOKENS, emojiOf } from './lib/tokens';
 import { addDays, msToReset, todayUtc } from './lib/utc';
 import { pct } from './lib/format';
@@ -92,7 +93,10 @@ export default function App() {
   ];
   const { book, errors, loading, liveAt } = usePrices(needed, from);
 
-  const sim = useMemo(() => simulate(sorted, book, today), [sorted, book, today]);
+  // coins that are or were short: Hyperliquid highs (liquidation) and funding
+  const shortSyms = useMemo(() => [...new Set(sorted.flatMap((s) => [...Object.entries(s.rsps.alloc), ...Object.entries(s.rsps.units)].filter(([k, v]) => v < 0 && k !== CASH).map(([k]) => k)))], [sorted]);
+  const perp = usePerp(shortSyms, from);
+  const sim = useMemo(() => simulate(sorted, book, today, perp), [sorted, book, today, perp]);
   const rows = sim?.rows ?? [];
   const last = rows.at(-1);
   const dates = sim ? [sim.start, ...rows.map((r) => r.date)] : [];
@@ -149,7 +153,13 @@ export default function App() {
   const lastSigTime = signals.reduce((t, s) => Math.max(t, s.createdAt), 0);
   const invested = (last?.invested ?? 0) + flows.filter((f) => f.time > lastSigTime).reduce((t, f) => t + f.amount, 0);
   const valueNow = holdings ? hSdca + hRsps : last?.value ?? 0;
-  const positions = useMemo(() => costBasis(sorted, book), [sorted, book]);
+  const positions = useMemo(() => costBasis(sorted, book, sim?.events ?? []), [sorted, book, sim]);
+  const shortInfo = useMemo(() => {
+    if (!shortSyms.length) return undefined;
+    const funding: Record<string, number> = {};
+    for (const e of sim?.events ?? []) if (e.kind === 'funding') funding[e.sym] = (funding[e.sym] ?? 0) + e.usd;
+    return { entry: sim?.shortEntry ?? {}, mm: perp.mm, funding };
+  }, [shortSyms, sim, perp.mm]);
   const applyFlow = (f: Flow) => {
     const base: Holdings = holdings ?? { sdca: sim?.sdca ?? { cash: 0, btc: 0 }, rsps: sim?.rsps ?? { cash: 0, units: {} }, updatedAt: 0 };
     if (holdings) archive('pp.holdings', 'replaced', 'Portfolio holdings', holdings);
@@ -246,7 +256,7 @@ export default function App() {
         networth={<NetWorthPanel initial={netWorth} history={nwHistory} onSave={saveNetWorth} onClose={() => setNetWorthOpen(false)} />}
         notes={<NotesTab notes={notes} setNotes={setNotes} onDelete={(n) => { archive(`pp.notes#${n.id}`, 'deleted', `Note “${n.text.split('\n')[0].slice(0, 40)}”`, n); setNotes((l) => l.filter((x) => x.id !== n.id)); }} />} />}
 
-      {portfolioOpen && <PortfolioView today={today} book={book} positions={positions} onClose={() => setPortfolioOpen(false)}
+      {portfolioOpen && <PortfolioView today={today} book={book} positions={positions} shorts={shortInfo} onClose={() => setPortfolioOpen(false)}
         sdca={holdings?.sdca ?? sim?.sdca ?? { cash: 0, btc: 0 }} rsps={holdings?.rsps ?? sim?.rsps ?? { cash: 0, units: {} }} />}
       {settingsOpen && <SettingsPanel theme={theme} setTheme={setTheme} feePct={feePct} setFeePct={setFeePct} reminders={reminders} saveReminder={saveReminder} deleteReminder={deleteReminder} onClose={() => setSettingsOpen(false)} />}
       {saveFailed && <div className="update-banner"><div><b>Could not save</b><div className="dim small">The browser’s storage is full or blocked. Export a backup now.</div></div>
