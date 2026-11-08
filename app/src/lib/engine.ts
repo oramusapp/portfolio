@@ -102,6 +102,18 @@ export interface RebalanceRow {
 }
 export interface RebalancePlan { total: number; rows: RebalanceRow[]; after: RspsState; missing: string[]; fee: number; }
 
+/** Cash frozen by open 1× shorts: the margin plus the entry value of the coins sold = 2 × |units| × entry price.
+ *  It stays in RSPS cash for the valuation (cash + Σ units × price), but it is not free: it cannot be spent or
+ *  withdrawn while the short is open. A short without a known entry price is counted at `fallback` (e.g. today's price). */
+export function frozenCash(units: Record<string, number>, entry: (sym: string) => number, fallback?: (sym: string) => number): number {
+  return Object.entries(units).reduce((t, [s, u]) => {
+    if (!(u < 0)) return t;
+    let e = entry(s);
+    if (!(Number.isFinite(e) && e > 0) && fallback) e = fallback(s);
+    return Number.isFinite(e) && e > 0 ? t + 2 * -u * e : t;
+  }, 0);
+}
+
 /** fee = fraction of the traded value (token sells + buys); it is taken proportionally from the resulting holdings.
  *  A negative target is a short: negative units, and cash = CASH% + the collateral and the sale proceeds of the shorts
  *  (2 × their size), so cash + Σ units × price = the part's value. Long-only allocations give the same result as before. */

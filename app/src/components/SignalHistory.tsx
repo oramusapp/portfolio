@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react';
 import { usePersisted } from '../lib/storage';
-import type { DayRow, RebalancePlan, RebalanceRow, SdcaOrder, Signal } from '../lib/engine';
+import { frozenCash, type DayRow, type RebalancePlan, type RebalanceRow, type SdcaOrder, type Signal } from '../lib/engine';
 import { CASH, emojiOf } from '../lib/tokens';
 import { num, pct, price, tone, usd } from '../lib/format';
 import { IcChevron, IcPen, IcPlus, IcTrash } from './icons';
@@ -76,7 +76,13 @@ export function RebalanceView({ p, live, partLabel = 'RSPS part', liveText }: { 
           </table>
         )}
       {sells.length > 0 && buys.length > 0 && <div className="dim small">Sell first, then buy with the proceeds.</div>}
-      <div className="cash-line">{emojiOf(CASH)} Cash: {usd(cash.curUsd, 2)} → <b>{usd(p.after.cash, 2)}</b> <span className="dim">({cash.tgtPct.toFixed(1)}% of {partLabel === 'RSPS part' ? 'RSPS' : 'portfolio'}{hasShort ? ', including the margin of the 1× shorts' : ''})</span></div>
+      {(() => {
+        // cash frozen by the shorts after the trade: margin + entry value at the execution price
+        const frozen = frozenCash(p.after.units, (s) => p.rows.find((r) => r.sym === s)?.price ?? NaN);
+        return frozen > MIN_USD
+          ? <div className="cash-line">{emojiOf(CASH)} Cash: {usd(cash.curUsd, 2)} → <b>{usd(p.after.cash, 2)}</b> — free <b>{usd(p.after.cash - frozen, 2)}</b> <span className="dim">({((p.after.cash - frozen) / p.total * 100).toFixed(1)}% of {partLabel === 'RSPS part' ? 'RSPS' : 'portfolio'})</span> + 🔒 {usd(frozen, 2)} frozen by the 1× shorts <span className="dim">(margin + entry value, not free while the short is open)</span></div>
+          : <div className="cash-line">{emojiOf(CASH)} Cash: {usd(cash.curUsd, 2)} → <b>{usd(p.after.cash, 2)}</b> <span className="dim">({cash.tgtPct.toFixed(1)}% of {partLabel === 'RSPS part' ? 'RSPS' : 'portfolio'}{hasShort ? ', including the margin of the 1× shorts' : ''})</span></div>;
+      })()}
       {p.fee > 0 && <div className="dim small">Fees ≈ {usd(p.fee, 2)} — taken proportionally from the new holdings.</div>}
       {p.missing.length > 0 && <div className="warn small">Missing price: {p.missing.join(', ')}</div>}
     </div>

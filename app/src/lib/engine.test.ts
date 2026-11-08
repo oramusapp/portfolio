@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allocError, costBasis, fillCash, liqPrice, rebalance, sdcaOrder, simulate, benchmark, type PerpData, type Signal } from './engine';
+import { allocError, costBasis, fillCash, frozenCash, liqPrice, rebalance, sdcaOrder, simulate, benchmark, type PerpData, type Signal } from './engine';
 import type { PriceBook } from './prices';
 
 describe('SDCA', () => {
@@ -233,5 +233,21 @@ describe('RSPS short: funding and liquidation (perp 1×)', () => {
     const pos = costBasis([sig], book, s.events)['RSPS:OP'];
     expect(pos.units).toBe(0);
     expect(pos.realized).toBeCloseTo(0.5 - 500);
+  });
+});
+
+describe('frozen cash of shorts', () => {
+  it('freezes margin + entry value (2 × size) and leaves the rest free', () => {
+    // 1000 RSPS: 50% CASH, 50% OP short at $2 → 250 OP short, cash 500 + 2 × 500 = 1500, of which 1000 frozen
+    const plan = rebalance({ alloc: { CASH: 50, OP: -50 }, cash: 1000, units: {} }, (s) => (s === 'CASH' ? 1 : 2));
+    expect(plan.after.units.OP).toBeCloseTo(-250);
+    const frozen = frozenCash(plan.after.units, () => 2);
+    expect(frozen).toBeCloseTo(1000);
+    expect(plan.after.cash - frozen).toBeCloseTo(500);
+  });
+  it('uses the entry price, falls back when it is unknown, ignores longs', () => {
+    expect(frozenCash({ OP: -10, BTC: 1 }, (s) => (s === 'OP' ? 3 : NaN))).toBeCloseTo(60);
+    expect(frozenCash({ OP: -10 }, () => NaN, () => 4)).toBeCloseTo(80);
+    expect(frozenCash({ OP: -10 }, () => NaN)).toBe(0);
   });
 });
