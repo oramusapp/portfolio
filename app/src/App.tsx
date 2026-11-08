@@ -262,7 +262,7 @@ export default function App() {
       {saveFailed && <div className="update-banner"><div><b>Could not save</b><div className="dim small">The browser’s storage is full or blocked. Export a backup now.</div></div>
         <button className="btn gold small" onClick={() => { setSaveFailed(false); setSettingsOpen(true); }}>Backup</button></div>}
 
-      {tab === 'crypto' && holdingsOpen && <HoldingsPanel key={holdings?.updatedAt ?? 0} today={today} book={book} onNeed={setFormSyms} flows={flows} onFlow={applyFlow}
+      {tab === 'crypto' && holdingsOpen && <HoldingsPanel key={holdings?.updatedAt ?? 0} today={today} book={book} onNeed={setFormSyms} flows={flows} onFlow={applyFlow} entry={shortInfo?.entry}
         initial={holdings ?? { sdca: sim?.sdca ?? { cash: 0, btc: 0 }, rsps: sim?.rsps ?? { cash: 0, units: {} }, updatedAt: 0 }}
         onSave={(h) => { if (holdings) archive('pp.holdings', 'replaced', 'Portfolio holdings', holdings); setHoldings(h); setHoldingsOpen(false); setFormSyms([]); }} onClose={() => { setHoldingsOpen(false); setFormSyms([]); }} />}
 

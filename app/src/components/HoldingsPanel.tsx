@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { priceOn, type PriceBook } from '../lib/prices';
 import { CASH, TOKENS, emojiOf } from '../lib/tokens';
-import type { SdcaState, RspsState } from '../lib/engine';
+import { frozenCash, type SdcaState, type RspsState } from '../lib/engine';
 import { num, price, usd } from '../lib/format';
 import { PairRows, toPairs, n, signed, type Pair } from './SignalForm';
 import { IcClose } from './icons';
@@ -12,10 +12,12 @@ export interface Flow { id: string; time: number; strategy: 'sdca' | 'rsps'; amo
 interface Props {
   initial: Holdings; book: PriceBook; today: string; onNeed: (syms: string[]) => void; onSave: (h: Holdings) => void; onClose: () => void;
   flows: Flow[]; onFlow: (f: Flow) => void;
+  /** average entry price of each open short (from the saved signals); missing → today's price */
+  entry?: Record<string, number>;
 }
 
 /** Current portfolio state per strategy; values are computed from the live price (open daily candle). */
-export function HoldingsPanel({ initial, book, today, onNeed, onSave, onClose, flows, onFlow }: Props) {
+export function HoldingsPanel({ initial, book, today, onNeed, onSave, onClose, flows, onFlow, entry }: Props) {
   const [flowOpen, setFlowOpen] = useState(false);
   const [flowStrat, setFlowStrat] = useState<'sdca' | 'rsps'>('sdca');
   const [flowSide, setFlowSide] = useState<'in' | 'out'>('in');
@@ -33,6 +35,10 @@ export function HoldingsPanel({ initial, book, today, onNeed, onSave, onClose, f
   const tokenValue = (u: Pair) => signed(u) * px(u.sym);   // a short counts as negative
   const rspsTotal = units.reduce((t, u) => t + (n(u.v) > 0 ? tokenValue(u) : 0), n(rspsCash));
   const bad = [btc, sdcaCash, rspsCash, ...units.map((u) => u.v)].some((v) => !(n(v) >= 0));
+  // cash frozen by the open shorts (margin + entry value) — not free to withdraw
+  const entryPx = (s: string) => entry?.[s] ?? NaN;
+  const frozen = frozenCash(Object.fromEntries(units.filter((u) => u.short && n(u.v) > 0).map((u) => [u.sym, signed(u)])), entryPx, px);
+  const frozenNow = frozenCash(initial.rsps.units, entryPx, px);
 
   const save = () => {
     if (bad) return;
@@ -66,6 +72,7 @@ export function HoldingsPanel({ initial, book, today, onNeed, onSave, onClose, f
             <PairRows rows={units} setRows={setUnits} options={TOKENS.map((t) => t.sym)} unit="units" placeholder="0" sides
               extra={(u) => <span className="val">{usd(tokenValue(u), 2)}</span>} />
             <label>{emojiOf(CASH)} Cash reserve<div className="field"><input inputMode="decimal" value={rspsCash} onChange={(e) => setRspsCash(e.target.value)} /><span className="unit">USD</span></div></label>
+            {frozen > 0 && <div className={n(rspsCash) < frozen - 0.005 ? 'warn small' : 'dim small'}>🔒 {usd(frozen, 2)} of it is frozen by the shorts (margin + entry value) · free: <b>{usd(n(rspsCash) - frozen, 2)}</b></div>}
             {units.length > 0 && <div className="dim small">{units.map((u) => `${u.sym} ${u.short ? 'short ' : ''}${num(n(u.v), 6)} @ ${price(px(u.sym))}`).join(' · ')}</div>}
           </div>
         </div>
@@ -79,8 +86,9 @@ export function HoldingsPanel({ initial, book, today, onNeed, onSave, onClose, f
           </div>
           <div className="dim small">Money added to or taken from a strategy's cash. It changes the cash at once and counts as a deposit / withdrawal, not as profit or loss.</div>
           {flowOpen && (() => {
-            const amt = n(flowAmt), cashNow = flowStrat === 'sdca' ? initial.sdca.cash : initial.rsps.cash;
-            const err = !(amt > 0) ? 'Enter an amount.' : flowSide === 'out' && amt > cashNow + 1e-9 ? `Only ${usd(cashNow, 2)} cash in ${flowStrat.toUpperCase()}.` : null;
+            const amt = n(flowAmt), cashNow = flowStrat === 'sdca' ? initial.sdca.cash : Math.max(0, initial.rsps.cash - frozenNow);
+            const err = !(amt > 0) ? 'Enter an amount.' : flowSide === 'out' && amt > cashNow + 1e-9
+              ? `Only ${usd(cashNow, 2)} free cash in ${flowStrat.toUpperCase()}${flowStrat === 'rsps' && frozenNow > 0 ? ` (${usd(frozenNow, 2)} is frozen by the shorts)` : ''}.` : null;
             return (
               <div className="flow-form">
                 <div className="seg"><button className={flowStrat === 'sdca' ? 'on' : ''} onClick={() => setFlowStrat('sdca')}>SDCA</button><button className={flowStrat === 'rsps' ? 'on' : ''} onClick={() => setFlowStrat('rsps')}>RSPS</button></div>

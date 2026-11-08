@@ -155,6 +155,7 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color:
 .liq-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0; color: var(--neg); }
 .liq-line .badge { flex: 0 0 auto; }
 .pv-liq { display: block; font-size: 11px; font-weight: 400; color: var(--dim); margin-top: 2px; }
+.pv-frozen { display: block; font-size: 11px; font-weight: 400; color: var(--amber); margin-top: 2px; }
 /* rows with the LONG / SHORT switch: a narrower asset list so the amount field keeps a usable width on phones */
 .pair:has(.ls) input { min-width: 64px; }
 @media (max-width: 560px) { .pair:has(.ls) select { width: 108px; } .pair .ls { min-width: 50px; padding: 6px 5px; } }
