@@ -26,6 +26,8 @@ import { CornerPanel, type CornerTab } from './components/CornerPanel';
 import { NotesTab, type Note } from './components/Notes';
 import { EtfApp } from './EtfApp';
 import { PortfolioView } from './components/PortfolioView';
+import { DashboardExport } from './components/DashboardExport';
+import { dashboardStats } from './lib/dashboardStats';
 
 const BENCH_COLORS: Record<string, string> = { BTC: 'var(--amber)', SOL: 'var(--cyan)' };
 const EXTRA_COLORS = ['#d946ef', '#84cc16', '#f97316', '#6366f1'];
@@ -209,6 +211,12 @@ export default function App() {
       {tab === 'crypto' ? <>
       <Kpis value={valueNow} strategy={last?.totalGain ?? NaN} btc={btcBh} sdcaValue={holdings ? hSdca : last?.sdcaValue ?? 0} rspsValue={holdings ? hRsps : last?.rspsValue ?? 0} onOpenPortfolio={() => setPortfolioOpen(true)} hidden={hideValue} onToggleHidden={() => setHideValue(!hideValue)}
         gains={invested > 0 ? valueNow / invested - 1 : NaN} />
+      <DashboardExport build={() => dashboardStats({
+        now: Date.now(), today, rows,
+        btcDaily: rows.map((r) => { const a = priceOn(book, 'BTC', addDays(r.date, -1)), b = priceOn(book, 'BTC', r.date); return a > 0 && b > 0 ? b / a - 1 : 0; }),
+        value: valueNow, sdcaValue: holdings ? hSdca : last?.sdcaValue ?? 0, rspsValue: holdings ? hRsps : last?.rspsValue ?? 0,
+        invested, btcBuyHold: btcBh, signalDates: sorted.map((s) => s.date)
+      })} />
 
       <section className="card panel">
         <div className="panel-head">
