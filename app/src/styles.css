@@ -355,3 +355,7 @@ table.mini td.wrap { white-space: normal; }
 .confirm-box { width: min(420px, 100%); gap: 12px; }
 .confirm-box h3 { margin: 0; }
 .row-btns { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* Copy stats for the Mój dzień dashboard */
+.dash-export { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; margin: -4px 0 4px; }
+.dash-export-text { width: 100%; font: 12px/1.4 inherit; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 9px; padding: 8px; }
