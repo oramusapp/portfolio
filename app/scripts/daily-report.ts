@@ -3,7 +3,7 @@
 // ArtifactData JSON files or one JSON object {"pp.signals": "<string>", ...}. Prices come straight from Hyperliquid.
 // Output (stdout, JSON): { stats, subject, text, html, png } — `stats` is the same dashboard-stats object the app's
 // "Copy stats" / the dashboard's "Zaktualizuj" produce; `text` / `html` are the e-mail (Polish, amounts never shown,
-// only %); `png` is the chart of SDCA and RSPS since the first signal (inline image `cid:att0` in `html`).
+// only %); `png` is the chart of SDCA and RSPS since the first signal (sent as a normal attachment; the HTML only mentions it, so mail apps show it once).
 // Usage: npx tsx scripts/daily-report.ts <folder-or-file> [--now=ISO] [--png=path]
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, basename } from 'node:path';
@@ -45,7 +45,6 @@ export async function dailyReport(saved: Record<string, string>, nowMs = Date.no
   const signals = parse<Signal[]>(saved, 'pp.signals', []);
   const holdings = parse<Holdings | null>(saved, 'pp.holdings', null);
   const flows = parse<Flow[]>(saved, 'pp.flows', []);
-  const netWorth = parse<{ currency: string; items: { amount: number }[] } | null>(saved, 'pp.networth', null);
   const hide = true;   // the e-mail never shows amounts, only %
   const sorted = [...signals].sort(bySignalOrder);
   const first = sorted[0]?.date;
@@ -87,7 +86,6 @@ export async function dailyReport(saved: Record<string, string>, nowMs = Date.no
   const btcNow = priceOn(book, 'BTC', today), btcPrev = priceOn(book, 'BTC', addDays(today, -1));
   const money = (v: number) => (hide ? '•••' : usd(v));
   const dayUsd = day ? valueNow - valueNow / (1 + day.r) : NaN;
-  const nwTotal = netWorth?.items?.reduce((t, i) => t + (Number(i.amount) || 0), 0) ?? null;
   const todays = sorted.filter((s) => s.date === today);
   const dateTxt = new Intl.DateTimeFormat('pl-PL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Warsaw' }).format(new Date(nowMs));
   const DASH = 'https://claude.ai/artifact/AbZFSxu5kJMLF1PTCNm97k';
@@ -98,8 +96,6 @@ export async function dailyReport(saved: Record<string, string>, nowMs = Date.no
   const alerts: string[] = [];
   if (day?.fundingUsd) alerts.push(`Funding shortów dziś: ${hide ? (day.fundingUsd >= 0 ? 'otrzymany' : 'zapłacony') : (day.fundingUsd >= 0 ? '+' : '') + usd(day.fundingUsd)}`);
   for (const l of day?.liquidations ?? []) alerts.push(`Likwidacja shorta ${l.sym}: ${hide ? '' : `strata ${usd(l.loss)}, `}cena ${usd(l.price)}`);
-  const nwGoal = nwTotal != null && netWorth && netWorth.currency === 'USD' && nwTotal > 0 ? Math.min(1, nwTotal / 1e6) : null;
-  const nwTxt = nwTotal != null && netWorth && !hide ? (netWorth.currency === 'USD' ? usd(nwTotal) : Math.round(nwTotal).toLocaleString('pl-PL') + ' ' + netWorth.currency) : null;
 
   // plain-text version
   const lines: string[] = [];
@@ -117,7 +113,6 @@ export async function dailyReport(saved: Record<string, string>, nowMs = Date.no
     if (alerts.length) lines.push('', 'UWAGA', ...alerts.map((a) => `  ⚠ ${a}`));
     lines.push('', sigTxt ? `Sygnały dziś: ${sigTxt}` : 'Dziś nie zapisano sygnału.');
   }
-  if (nwGoal != null || nwTxt) lines.push(`Net worth: ${[nwTxt, nwGoal != null ? `${(nwGoal * 100).toFixed(1)}% celu 1 mln USD` : null].filter(Boolean).join(' · ')}`);
   lines.push('', `Dashboard: ${DASH}`);
   const subject = `Portfolio ${today}: ${day ? pct(day.r, 2) + ' dziś · ' : ''}strategia ${pct(stats.strategyReturn)}`;
   const text = lines.join('\n');
@@ -146,9 +141,7 @@ export async function dailyReport(saved: Record<string, string>, nowMs = Date.no
     body += section('Ryzyko', row('Max drawdown', pct(stats.risk.portfolio.maxDD), tone(stats.risk.portfolio.maxDD)) + row('Sharpe', sharpeTxt));
     body += `<div style="margin-top:18px;font-size:14px;color:#3a3a3c"><b>Sygnały dziś:</b> ${sigTxt ? esc(sigTxt) : '<span style="color:#6e6e73">brak nowego sygnału</span>'}</div>`;
   }
-  if (nwGoal != null || nwTxt) body += `<div style="margin-top:8px;font-size:14px;color:#3a3a3c"><b>Net worth:</b> ${esc([nwTxt, nwGoal != null ? `${(nwGoal * 100).toFixed(1)}% celu 1 mln USD` : null].filter(Boolean).join(' · '))}</div>`
-    + (nwGoal != null ? `<div style="margin-top:6px;height:6px;background:#ececf0;border-radius:3px"><div style="height:6px;width:${(nwGoal * 100).toFixed(1)}%;background:#1a7f37;border-radius:3px"></div></div>` : '');
-  if (rows.length > 1) body += `<div style="font-size:13px;font-weight:700;color:#6e6e73;text-transform:uppercase;letter-spacing:.05em;margin:24px 0 8px">Wykres od pierwszego sygnału</div><img src="cid:att0" width="600" alt="Wykres: SDCA i RSPS od pierwszego sygnału" style="display:block;width:100%;max-width:600px;height:auto;border-radius:8px">`;
+  if (rows.length > 1) body += `<div style="font-size:13px;font-weight:700;color:#6e6e73;text-transform:uppercase;letter-spacing:.05em;margin:24px 0 8px">Wykres od pierwszego sygnału</div><div style="font-size:14px;color:#3a3a3c">SDCA i RSPS od pierwszego sygnału: w załączniku <b>wykres-strategii.png</b>.</div>`;
   body += `<div style="margin-top:24px;text-align:center"><a href="${DASH}" style="display:inline-block;background:#1c1c1e;color:#ffffff;text-decoration:none;font-weight:600;font-size:14px;padding:11px 22px;border-radius:999px">Otwórz dashboard</a></div>`;
   const html = `<div style="background:#ffffff;padding:8px 0"><div style="${F};color:#1c1c1e;max-width:600px;margin:0 auto;padding:0 16px">${body}</div></div>`;
   return { stats, subject, text, html, svg: rows.length > 1 && sim ? chartSvg(sim.start, rows.map((r) => [r.date, r.sdcaGain, r.rspsGain] as [string, number, number])) : null };
