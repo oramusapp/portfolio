@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { IcChevron, IcPen, IcTrash } from './icons';
+import { ask } from '../lib/platform';
 
 // Notes in the style of the iPhone Notes app: list grouped by date, search, pin, the first line is the title,
 // every keystroke is saved, an empty note disappears when you leave it.
@@ -59,7 +60,7 @@ export function NotesTab({ notes, setNotes, onDelete }: Props) {
   if (open) return <Editor note={open} onBack={close}
     onChange={(text) => setNotes((l) => l.map((n) => (n.id === open.id ? { ...n, text, updated: Date.now() } : n)))}
     onPin={() => setNotes((l) => l.map((n) => (n.id === open.id ? { ...n, pinned: !n.pinned } : n)))}
-    onDelete={() => { if (!open.text.trim() || confirm('Delete this note? It can be restored from Settings → Backup → Archive.')) { if (open.text.trim()) onDelete(open); else setNotes((l) => l.filter((n) => n.id !== open.id)); setOpenId(null); } }} />;
+    onDelete={async () => { if (!open.text.trim() || await ask('Delete this note? It can be restored from Settings → Backup → Archive.')) { if (open.text.trim()) onDelete(open); else setNotes((l) => l.filter((n) => n.id !== open.id)); setOpenId(null); } }} />;
 
   return (
     <div className="notes">
