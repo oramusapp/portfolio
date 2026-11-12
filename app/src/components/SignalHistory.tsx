@@ -4,6 +4,7 @@ import { frozenCash, type DayRow, type RebalancePlan, type RebalanceRow, type Sd
 import { CASH, emojiOf } from '../lib/tokens';
 import { num, pct, price, tone, usd } from '../lib/format';
 import { IcChevron, IcPen, IcPlus, IcTrash } from './icons';
+import { ask } from '../lib/platform';
 
 const PAGE = 10;   // history rows shown at a time
 
@@ -143,7 +144,7 @@ export function SignalHistory({ rows, today, hasToday, resetIn, onAdd, onEdit, o
                     <td className="r nowrap" onClick={(e) => e.stopPropagation()}>
                       {r.execs.length === 1 && <>
                         <button className="icon" title="Edit signal" onClick={() => onEdit(r.signal)}><IcPen width={16} /></button>
-                        <button className="icon" title="Delete signal" onClick={() => { if (confirm(`Delete the signal of ${r.date}?`)) onDelete(r.signal); }}><IcTrash width={16} /></button>
+                        <button className="icon" title="Delete signal" onClick={async () => { if (await ask(`Delete the signal of ${r.date}?`)) onDelete(r.signal); }}><IcTrash width={16} /></button>
                       </>}
                       {r.execs.length > 1 && <button className="btn ghost small" onClick={() => setOpen(r.date)}>{r.execs.length} signals ▾</button>}
                     </td>
@@ -167,7 +168,7 @@ export function SignalHistory({ rows, today, hasToday, resetIn, onAdd, onEdit, o
                             <b>Signal {i + 1} of {r.execs.length}</b> <span className="dim small">saved {new Date(ex.signal.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>
                             {editing && <span className="exec-actions">
                               <button className="icon" title="Edit signal" onClick={() => onEdit(ex.signal)}><IcPen width={16} /></button>
-                              <button className="icon" title="Delete signal" onClick={() => { if (confirm(`Delete signal ${i + 1} of ${r.date}?`)) onDelete(ex.signal); }}><IcTrash width={16} /></button>
+                              <button className="icon" title="Delete signal" onClick={async () => { if (await ask(`Delete signal ${i + 1} of ${r.date}?`)) onDelete(ex.signal); }}><IcTrash width={16} /></button>
                             </span>}
                           </div>
                         )}

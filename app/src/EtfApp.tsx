@@ -16,6 +16,7 @@ import { StatsCard } from './components/StatsCard';
 import { RebalanceView } from './components/SignalHistory';
 import { PairRows, n, toPairs, type Pair } from './components/SignalForm';
 import { IcChevron, IcClose, IcPen, IcPlus, IcTrash } from './components/icons';
+import { ask } from './lib/platform';
 
 // ---------- market data (markets.json, written daily by the GitHub Action) ----------
 export interface MarketTicker { name: string; yahoo: string; exchange: string; currency: string; lastDate: string; lastLocal: number; closes: Record<string, number>; }
@@ -418,7 +419,7 @@ export function EtfApp({ which, today, feePct, hideValue, setHideValue, holdings
                     {editing && <td className="r nowrap" onClick={(e) => e.stopPropagation()}>
                       {r.execs.length === 1 && <>
                         <button className="icon" title="Edit signal" onClick={() => setForm({ initial: r.execs[0].signal, existing: true })}><IcPen width={16} /></button>
-                        <button className="icon" title="Delete signal" onClick={() => { if (confirm(`Delete the signal of ${r.date}?`)) deleteSignal(r.execs[0].signal); }}><IcTrash width={16} /></button>
+                        <button className="icon" title="Delete signal" onClick={async () => { if (await ask(`Delete the signal of ${r.date}?`)) deleteSignal(r.execs[0].signal); }}><IcTrash width={16} /></button>
                       </>}
                       {r.execs.length > 1 && <button className="btn ghost small" onClick={() => setOpen(r.date)}>{r.execs.length} signals ▾</button>}
                     </td>}
@@ -432,7 +433,7 @@ export function EtfApp({ which, today, feePct, hideValue, setHideValue, holdings
                             <b>{r.execs.length > 1 ? `Signal ${i + 1} of ${r.execs.length}` : 'Signal'}</b> <span className="dim small">saved {new Date(ex.signal.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>
                             {editing && r.execs.length > 1 && <span className="exec-actions">
                               <button className="icon" title="Edit signal" onClick={() => setForm({ initial: ex.signal, existing: true })}><IcPen width={16} /></button>
-                              <button className="icon" title="Delete signal" onClick={() => { if (confirm(`Delete signal ${i + 1} of ${r.date}?`)) deleteSignal(ex.signal); }}><IcTrash width={16} /></button>
+                              <button className="icon" title="Delete signal" onClick={async () => { if (await ask(`Delete signal ${i + 1} of ${r.date}?`)) deleteSignal(ex.signal); }}><IcTrash width={16} /></button>
                             </span>}
                           </div>
                           <div className="split">

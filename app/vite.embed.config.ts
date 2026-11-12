@@ -13,7 +13,9 @@ export default defineConfig({
     alias: [
       { find: /^\.\/lib\/theme$/, replacement: here('./embed/theme.ts') },
       { find: /^\.\.\/lib\/theme$/, replacement: here('./embed/theme.ts') },
-      { find: /^\.\/components\/MatrixRain$/, replacement: here('./embed/nothing.tsx') }
+      { find: /^\.\/components\/MatrixRain$/, replacement: here('./embed/nothing.tsx') },
+      { find: /^\.\/lib\/platform$/, replacement: here('./embed/platform.ts') },
+      { find: /^\.\.\/lib\/platform$/, replacement: here('./embed/platform.ts') }
     ]
   },
   build: {

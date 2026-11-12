@@ -9,6 +9,7 @@ import fontCss from '@fontsource/share-tech-mono/400.css?inline';
 import { migrate } from '../src/lib/storage';
 import { applyTheme, initialTheme, setThemeHost } from './theme';
 import { installFetch, setData, type EmbedData } from './shim';
+import { setPlatformHost } from './platform';
 
 const scoped = css
   .replace(/:root\[data-theme=['"]?(\w+)['"]?\]/g, ":host([data-theme='$1'])")
@@ -21,9 +22,10 @@ interface MountOptions {
   data: EmbedData;
   saved: Record<string, string>;                          // 'pp.*' key → stored string
   onSave: (key: string, value: string | null) => void;    // called when the app writes or removes a 'pp.*' key
+  saveFile?: (name: string, text: string) => Promise<void>; // offer a backup file through the dashboard
 }
 
-let root: Root | null = null, fetchInstalled = false, storageHooked = false;
+let root: Root | null = null, rootEl: HTMLElement | null = null, shadowRef: ShadowRoot | null = null, fetchInstalled = false, storageHooked = false;
 let notify: MountOptions['onSave'] = () => {};
 
 function hookStorage() {
@@ -67,13 +69,46 @@ function mount(container: HTMLElement, opts: MountOptions) {
   shadow.replaceChildren();
   const style = document.createElement('style'); style.textContent = scoped; shadow.appendChild(style);
   const body = document.createElement('div'); body.className = 'pp-body'; shadow.appendChild(body);
-  const rootEl = document.createElement('div'); rootEl.className = 'pp-root'; body.appendChild(rootEl);
+  rootEl = document.createElement('div'); rootEl.className = 'pp-root'; body.appendChild(rootEl);
+  shadowRef = shadow;
   setThemeHost(container);
+  setPlatformHost({ ask: askInWindow, reload: rerender, saveFile: opts.saveFile });
+  applyTheme(initialTheme());
+  rerender();
+}
+
+// Start the app over with what is now saved (after a backup import or a full restore), without reloading the page.
+function rerender() {
+  if (!rootEl) return;
+  if (root) root.unmount();
+  migrate();
   applyTheme(initialTheme());
   root = createRoot(rootEl);
   root.render(<StrictMode><App /></StrictMode>);
 }
 
-function unmount() { if (root) { root.unmount(); root = null; } notify = () => {}; }
+// Yes/no question shown inside the app window (the dashboard page may not open browser dialogs).
+function askInWindow(message: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (!shadowRef) { resolve(false); return; }
+    const wrap = document.createElement('div');
+    wrap.setAttribute('style', 'position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;padding:16px;background:var(--overlay,#000c)');
+    const box = document.createElement('div');
+    box.setAttribute('role', 'alertdialog'); box.setAttribute('aria-modal', 'true');
+    box.setAttribute('style', 'max-width:420px;width:100%;background:var(--surface,#0b0e0c);color:var(--text,#e4ebe6);border:1px solid var(--line,#1f2923);border-radius:14px;padding:18px;box-shadow:var(--shadow,none)');
+    const p = document.createElement('p'); p.textContent = message; p.setAttribute('style', 'margin:0 0 16px;line-height:1.45');
+    const row = document.createElement('div'); row.setAttribute('style', 'display:flex;gap:8px;justify-content:flex-end');
+    const no = document.createElement('button'); no.className = 'btn'; no.textContent = 'Cancel';
+    const yes = document.createElement('button'); yes.className = 'btn gold'; yes.textContent = 'OK';
+    const done = (v: boolean) => { wrap.remove(); resolve(v); };
+    no.onclick = () => done(false); yes.onclick = () => done(true);
+    wrap.onkeydown = (e) => { if (e.key === 'Escape') done(false); };
+    row.append(no, yes); box.append(p, row); wrap.appendChild(box);
+    (shadowRef.querySelector('.pp-body') ?? shadowRef).appendChild(wrap);
+    setTimeout(() => yes.focus(), 20);
+  });
+}
+
+function unmount() { if (root) { root.unmount(); root = null; } rootEl = null; shadowRef = null; notify = () => {}; }
 
 (window as any).PortfolioEmbed = { mount, unmount, update: setData };

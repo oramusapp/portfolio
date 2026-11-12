@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { sigId, type Signal } from '../lib/engine';
+import { ask, reloadApp, saveFile } from '../lib/platform';
 import { SCHEMA_VERSION, exportBackup, importBackup, readArchive, archive, restoreValue, writeKey, type ArchiveEntry, type BackupFile } from '../lib/storage';
 
 const REASON: Record<ArchiveEntry['reason'], string> = {
@@ -7,17 +8,6 @@ const REASON: Record<ArchiveEntry['reason'], string> = {
 };
 const SIGNAL_PREFIX = 'pp.signals#';
 const NOTE_PREFIX = 'pp.notes#';
-
-async function saveFile(name: string, text: string) {
-  const blob = new Blob([text], { type: 'application/json' });
-  const file = new File([blob], name, { type: 'application/json' });
-  if (navigator.canShare?.({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: name }); return; } catch (e) { if ((e as Error).name === 'AbortError') return; }
-  }
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob); a.download = name; a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-}
 
 /** Exports everything to a file and remembers when (for the monthly backup prompt). */
 export async function exportNow() {
@@ -29,7 +19,7 @@ export async function exportNow() {
 function restore(e: ArchiveEntry) {
   if (e.key === '*') {
     importBackup({ app: 'portfolio-performance', schema: SCHEMA_VERSION, created: new Date(e.time).toISOString(), data: JSON.parse(e.data) as Record<string, string> });
-    location.reload();
+    reloadApp();
     return;
   }
   if (e.key.startsWith(SIGNAL_PREFIX)) {
@@ -75,14 +65,14 @@ export function BackupSection() {
     if (!f) return;
     try {
       const file = JSON.parse(await f.text()) as BackupFile;
-      if (!confirm(`Load the backup from ${file.created?.slice(0, 10) ?? 'unknown date'}? Your current data is archived first and can be restored.`)) return;
+      if (!(await ask(`Load the backup from ${file.created?.slice(0, 10) ?? 'unknown date'}? Your current data is archived first and can be restored.`))) return;
       importBackup(file);
-      location.reload();
+      reloadApp();
     } catch (e) { setMsg({ ok: false, text: (e as Error).message || 'Could not read this file.' }); }
     finally { if (fileRef.current) fileRef.current.value = ''; }
   };
-  const doRestore = (e: ArchiveEntry) => {
-    if (!confirm(`Restore “${e.label}” from ${new Date(e.time).toLocaleString()}? What it replaces is archived first.`)) return;
+  const doRestore = async (e: ArchiveEntry) => {
+    if (!(await ask(`Restore “${e.label}” from ${new Date(e.time).toLocaleString()}? What it replaces is archived first.`))) return;
     try { restore(e); setEntries(readArchive()); setMsg({ ok: true, text: `Restored: ${e.label}.` }); }
     catch { setMsg({ ok: false, text: 'Could not restore this entry.' }); }
   };

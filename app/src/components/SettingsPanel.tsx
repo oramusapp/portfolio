@@ -3,6 +3,7 @@ import { BackupSection } from './BackupPanel';
 import { IcBell, IcClose, IcPen, IcPlus, IcTrash } from './icons';
 import { WEEKDAYS, describe, dueFor, localToday, nextOccurrence, type Reminder, type Schedule } from '../lib/reminders';
 import type { Theme } from '../lib/theme';
+import { ask } from '../lib/platform';
 
 type Kind = Schedule['kind'];
 interface Draft { id?: string; title: string; action: string; kind: Kind; day: string; weekday: number; date: string; }
@@ -123,7 +124,7 @@ export function SettingsPanel({ theme, setTheme, feePct, setFeePct, reminders, s
                   <div className="dim small">{describe(r.schedule)} · {due ? <span className="warn">due ({due})</span> : next ? `next ${next}` : 'done'}</div>
                 </div>
                 <button className="icon" title="Edit" onClick={() => setDraft(toDraft(r))}><IcPen width={16} /></button>
-                <button className="icon" title="Delete" onClick={() => { if (confirm(`Delete the reminder “${r.title}”?`)) deleteReminder(r); }}><IcTrash width={16} /></button>
+                <button className="icon" title="Delete" onClick={async () => { if (await ask(`Delete the reminder “${r.title}”?`)) deleteReminder(r); }}><IcTrash width={16} /></button>
               </div>
             );
           })}
