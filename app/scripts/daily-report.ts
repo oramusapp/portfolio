@@ -4,7 +4,8 @@
 // Output (stdout, JSON): { stats, subject, text, html, png } — `stats` is the same dashboard-stats object the app's
 // "Copy stats" / the dashboard's "Zaktualizuj" produce; `text` / `html` are the e-mail (Polish, amounts never shown,
 // only %); `png` is the chart of SDCA and RSPS since the first signal (sent as a normal attachment; the HTML only mentions it, so mail apps show it once).
-// Usage: npx tsx scripts/daily-report.ts <folder-or-file> [--now=ISO] [--png=path]
+// Usage: npx tsx scripts/daily-report.ts <folder-or-file> [--now=ISO] [--png=path] [--week]
+// --week: the weekly summary (last 7 days) instead of the daily one.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { createRequire } from 'node:module';
@@ -40,7 +41,7 @@ const parse = <T,>(saved: Record<string, string>, key: string, fallback: T): T =
 const usd = (v: number) => (v < 0 ? '-' : '') + '$' + Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 });
 const pct = (v: number | null | undefined, d = 1) => (v == null || !Number.isFinite(v) ? '—' : (v > 0 ? '+' : '') + (v * 100).toFixed(d) + '%');
 
-export async function dailyReport(saved: Record<string, string>, nowMs = Date.now()) {
+export async function dailyReport(saved: Record<string, string>, nowMs = Date.now(), opts: { week?: boolean } = {}) {
   const today = todayUtc(nowMs);
   const signals = parse<Signal[]>(saved, 'pp.signals', []);
   const holdings = parse<Holdings | null>(saved, 'pp.holdings', null);
@@ -129,6 +130,47 @@ export async function dailyReport(saved: Record<string, string>, nowMs = Date.no
     + `<td align="right" style="padding:9px 0;border-bottom:1px solid #ececf0;color:${color};font-weight:${strong ? 700 : 600};white-space:nowrap">${esc(val)}</td></tr>`;
   const section = (title: string, body: string) => `<div style="font-size:13px;font-weight:700;color:#6e6e73;text-transform:uppercase;letter-spacing:.05em;margin:24px 0 4px">${esc(title)}</div>`
     + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:15px">${body}</table>`;
+  if (opts.week) {
+    const wFrom = addDays(today, -7);
+    const wk = sim ? rows.filter((r) => r.date > wFrom) : [];
+    const comp = (k: 'r' | 'rSdca' | 'rRsps') => (wk.length ? wk.reduce((t, r) => t * (1 + (Number(r[k]) || 0)), 1) - 1 : null);
+    const wP = comp('r'), wS = comp('rSdca'), wR = comp('rRsps');
+    const b0 = priceOn(book, 'BTC', wFrom), b1 = priceOn(book, 'BTC', today);
+    const wB = b0 > 0 && b1 > 0 ? b1 / b0 - 1 : null;
+    const wSig = sorted.filter((sg) => sg.date > wFrom && sg.date <= today);
+    const nS = wSig.filter((sg) => sg.sdcaNew !== false).length, nR = wSig.filter((sg) => sg.rspsNew !== false).length;
+    const best = wk.reduce<(typeof wk)[number] | null>((m, r) => (!m || r.r > m.r ? r : m), null);
+    const worst = wk.reduce<(typeof wk)[number] | null>((m, r) => (!m || r.r < m.r ? r : m), null);
+    const dshort = (d: string) => new Intl.DateTimeFormat('pl-PL', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(d + 'T00:00:00Z'));
+    const range = `${dshort(addDays(wFrom, 1))} – ${dshort(today)}`;
+    const vsB = wP != null && wB != null ? (wP - wB > 0 ? '+' : '') + ((wP - wB) * 100).toFixed(1) + ' pkt' : '—';
+    const wl: string[] = [`PODSUMOWANIE TYGODNIA — ${range}`, ''];
+    if (!sim) wl.push('W aplikacji Portfolio nie ma jeszcze sygnałów.');
+    else {
+      wl.push('TYDZIEŃ', `  Portfel krypto   ${pct(wP, 2)}`, `  SDCA             ${pct(wS, 2)}`, `  RSPS             ${pct(wR, 2)}`, `  BTC              ${pct(wB, 2)}`, `  Portfel vs BTC   ${vsB}`);
+      if (best && worst) wl.push('', `Najlepszy dzień: ${dshort(best.date)} ${pct(best.r, 2)}`, `Najgorszy dzień: ${dshort(worst.date)} ${pct(worst.r, 2)}`);
+      wl.push('', `Rotacje (zapisane sygnały): ${wSig.length} · SDCA ${nS} · RSPS ${nR}`);
+      wl.push('', `OD STARTU (${sim.start})`, `  Strategia        ${pct(stats.strategyReturn)}`, `  BTC buy & hold   ${pct(stats.btcBuyHold)}`, `  Max drawdown     ${pct(stats.risk.portfolio.maxDD)}`);
+    }
+    wl.push('', `Dashboard: ${DASH}`);
+    let wb = `<div style="font-size:22px;font-weight:700;color:#1c1c1e">Podsumowanie tygodnia</div><div style="font-size:14px;color:#6e6e73;margin-top:2px">${esc(range)}</div>`;
+    if (!sim) wb += '<p style="font-size:15px;margin:20px 0">W aplikacji Portfolio nie ma jeszcze sygnałów.</p>';
+    else {
+      wb += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px -6px 0;width:calc(100% + 12px)"><tr>`
+        + tile('Portfel', wP) + tile('BTC', wB, 2, b1 > 0 ? usd(b1) : '') + tile('Strategia', stats.strategyReturn, 1, `od ${sim.start}`) + '</tr></table>';
+      wb += section('Tydzień', row('SDCA', pct(wS, 2), tone(wS)) + row('RSPS', pct(wR, 2), tone(wR)) + row('Portfel vs BTC', vsB, tone(wP != null && wB != null ? wP - wB : null))
+        + (best && worst ? row('Najlepszy dzień · ' + dshort(best.date), pct(best.r, 2), tone(best.r)) + row('Najgorszy dzień · ' + dshort(worst.date), pct(worst.r, 2), tone(worst.r)) : ''));
+      wb += section('Rotacje', row('Zapisane sygnały', String(wSig.length)) + row('SDCA', String(nS)) + row('RSPS', String(nR)));
+      wb += section(`Od startu (${sim.start})`, row('Strategia', pct(stats.strategyReturn), tone(stats.strategyReturn), true) + row('BTC buy & hold', pct(stats.btcBuyHold), tone(stats.btcBuyHold)) + row('Max drawdown', pct(stats.risk.portfolio.maxDD), tone(stats.risk.portfolio.maxDD)));
+      if (rows.length > 1) wb += `<div style="font-size:13px;font-weight:700;color:#6e6e73;text-transform:uppercase;letter-spacing:.05em;margin:24px 0 8px">Wykres od pierwszego sygnału</div><div style="font-size:14px;color:#3a3a3c">SDCA i RSPS od pierwszego sygnału: w załączniku <b>wykres-strategii.png</b>.</div>`;
+    }
+    wb += `<div style="margin-top:24px;text-align:center"><a href="${DASH}" style="display:inline-block;background:#1c1c1e;color:#ffffff;text-decoration:none;font-weight:600;font-size:14px;padding:11px 22px;border-radius:999px">Otwórz dashboard</a></div>`;
+    return {
+      stats, subject: `Portfolio tydzień ${addDays(wFrom, 1)}–${today}: ${pct(wP, 2)} · strategia ${pct(stats.strategyReturn)}`, text: wl.join('\n'),
+      html: `<div style="background:#ffffff;padding:8px 0"><div style="${F};color:#1c1c1e;max-width:600px;margin:0 auto;padding:0 16px">${wb}</div></div>`,
+      svg: rows.length > 1 && sim ? chartSvg(sim.start, rows.map((r) => [r.date, r.sdcaGain, r.rspsGain] as [string, number, number])) : null
+    };
+  }
   let body = `<div style="font-size:22px;font-weight:700;color:#1c1c1e">Podsumowanie dnia</div><div style="font-size:14px;color:#6e6e73;margin-top:2px">${esc(dateTxt)}</div>`;
   if (!sim) body += '<p style="font-size:15px;margin:20px 0">W aplikacji Portfolio nie ma jeszcze sygnałów.</p>';
   else {
@@ -192,7 +234,7 @@ if (process.argv[2]) {
   const nowArg = process.argv.find((a) => a.startsWith('--now='));
   const nowMs = nowArg ? Date.parse(nowArg.slice(6)) : Date.now();
   const pngArg = process.argv.find((a) => a.startsWith('--png='));
-  dailyReport(readSaved(process.argv[2]), nowMs).then(async (r) => {
+  dailyReport(readSaved(process.argv[2]), nowMs, { week: process.argv.includes('--week') }).then(async (r) => {
     let png: string | null = null;
     if (pngArg && r.svg) { png = pngArg.slice(6); await svgToPng(r.svg, png); }
     const { svg: _svg, ...rest } = r;
