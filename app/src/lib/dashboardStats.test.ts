@@ -22,6 +22,7 @@ describe('dashboardStats', () => {
     expect(s.risk.portfolio.maxDD).toBeCloseTo(-0.05);
     expect(s.firstSignal).toBe('2026-11-08');
     expect(s.lastSignal).toBe('2026-11-09');
+    expect(s.series).toEqual([['2026-11-08', 0.1, 0.1, 0], ['2026-11-09', 0.045, 0.045, 0]]);
     expect(JSON.parse(JSON.stringify(s))).toEqual(s);
   });
   it('turns missing numbers into null instead of NaN', () => {
@@ -29,5 +30,6 @@ describe('dashboardStats', () => {
     expect(s.strategyReturn).toBeNull();
     expect(s.gains).toBeNull();
     expect(s.lastSignal).toBeNull();
+    expect(s.series).toEqual([]);
   });
 });
