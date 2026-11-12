@@ -89,36 +89,68 @@ export async function dailyReport(saved: Record<string, string>, nowMs = Date.no
   const dayUsd = day ? valueNow - valueNow / (1 + day.r) : NaN;
   const nwTotal = netWorth?.items?.reduce((t, i) => t + (Number(i.amount) || 0), 0) ?? null;
   const todays = sorted.filter((s) => s.date === today);
-  const lines: string[] = [];
   const dateTxt = new Intl.DateTimeFormat('pl-PL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Warsaw' }).format(new Date(nowMs));
-  lines.push(`Podsumowanie dnia — ${dateTxt}`, '');
+  const DASH = 'https://claude.ai/artifact/AbZFSxu5kJMLF1PTCNm97k';
+  const btcDay = btcNow > 0 && btcPrev > 0 ? btcNow / btcPrev - 1 : null;
+  const vsBtcTxt = stats.vsBtc == null ? '—' : (stats.vsBtc > 0 ? '+' : '') + (stats.vsBtc * 100).toFixed(1) + ' pkt';
+  const sharpeTxt = stats.risk.portfolio.sharpe == null ? '—' : stats.risk.portfolio.sharpe.toFixed(2);
+  const sigTxt = todays.length ? todays.map((s) => [s.sdcaNew !== false ? 'SDCA' : '', s.rspsNew !== false ? 'RSPS' : ''].filter(Boolean).join(' + ') || 'bez zmian').join(', ') : null;
+  const alerts: string[] = [];
+  if (day?.fundingUsd) alerts.push(`Funding shortów dziś: ${hide ? (day.fundingUsd >= 0 ? 'otrzymany' : 'zapłacony') : (day.fundingUsd >= 0 ? '+' : '') + usd(day.fundingUsd)}`);
+  for (const l of day?.liquidations ?? []) alerts.push(`Likwidacja shorta ${l.sym}: ${hide ? '' : `strata ${usd(l.loss)}, `}cena ${usd(l.price)}`);
+  const nwGoal = nwTotal != null && netWorth && netWorth.currency === 'USD' && nwTotal > 0 ? Math.min(1, nwTotal / 1e6) : null;
+  const nwTxt = nwTotal != null && netWorth && !hide ? (netWorth.currency === 'USD' ? usd(nwTotal) : Math.round(nwTotal).toLocaleString('pl-PL') + ' ' + netWorth.currency) : null;
+
+  // plain-text version
+  const lines: string[] = [];
+  lines.push(`PODSUMOWANIE DNIA — ${dateTxt}`, '');
   if (!sim) lines.push('W aplikacji Portfolio nie ma jeszcze sygnałów.');
   else {
-    lines.push(`Portfel krypto: ${money(valueNow)}${day ? ` · dziś ${pct(day.r, 2)}${hide ? '' : ` (${dayUsd >= 0 ? '+' : ''}${usd(dayUsd)})`}` : ''}`);
-    if (day) lines.push(`  SDCA: ${money(sdcaValue)} · dziś ${pct(day.rSdca, 2)}`, `  RSPS: ${money(rspsValue)} · dziś ${pct(day.rRsps, 2)}`);
-    lines.push('', `Strategia od ${sim.start}: ${pct(stats.strategyReturn)} · SDCA ${pct(stats.sdcaReturn)} · RSPS ${pct(stats.rspsReturn)}`);
-    lines.push(`BTC buy & hold: ${pct(stats.btcBuyHold)} · strategia vs BTC: ${stats.vsBtc == null ? '—' : (stats.vsBtc > 0 ? '+' : '') + (stats.vsBtc * 100).toFixed(1) + ' pkt'}`);
-    lines.push(`Max drawdown: ${pct(stats.risk.portfolio.maxDD)} · Sharpe: ${stats.risk.portfolio.sharpe == null ? '—' : stats.risk.portfolio.sharpe.toFixed(2)}`);
-    if (btcNow > 0 && btcPrev > 0) lines.push(`BTC dziś: ${pct(btcNow / btcPrev - 1, 2)} (${usd(btcNow)})`);
-    if (day && (day.fundingUsd || day.liquidations.length)) {
-      if (day.fundingUsd) lines.push(`Funding shortów dziś: ${hide ? (day.fundingUsd >= 0 ? 'otrzymany' : 'zapłacony') : (day.fundingUsd >= 0 ? '+' : '') + usd(day.fundingUsd)}`);
-      for (const l of day.liquidations) lines.push(`⚠ Likwidacja shorta ${l.sym}: ${hide ? '' : `strata ${usd(l.loss)}, `}cena ${usd(l.price)}`);
-    }
-    lines.push('', todays.length ? `Sygnały dziś: ${todays.map((s) => [s.sdcaNew !== false ? 'SDCA' : '', s.rspsNew !== false ? 'RSPS' : ''].filter(Boolean).join(' + ') || 'bez zmian').join(', ')}` : 'Dziś nie zapisano sygnału.');
+    lines.push('DZIŚ');
+    lines.push(`  Portfel krypto   ${day ? pct(day.r, 2) : '—'}${hide ? '' : `  (${money(valueNow)})`}`);
+    if (day) lines.push(`  SDCA             ${pct(day.rSdca, 2)}`, `  RSPS             ${pct(day.rRsps, 2)}`);
+    if (btcDay != null) lines.push(`  BTC              ${pct(btcDay, 2)}  (${usd(btcNow)})`);
+    lines.push('', `OD STARTU (${sim.start})`);
+    lines.push(`  Strategia        ${pct(stats.strategyReturn)}`, `  SDCA             ${pct(stats.sdcaReturn)}`, `  RSPS             ${pct(stats.rspsReturn)}`);
+    lines.push(`  BTC buy & hold   ${pct(stats.btcBuyHold)}`, `  Strategia vs BTC ${vsBtcTxt}`);
+    lines.push('', 'RYZYKO', `  Max drawdown     ${pct(stats.risk.portfolio.maxDD)}`, `  Sharpe           ${sharpeTxt}`);
+    if (alerts.length) lines.push('', 'UWAGA', ...alerts.map((a) => `  ⚠ ${a}`));
+    lines.push('', sigTxt ? `Sygnały dziś: ${sigTxt}` : 'Dziś nie zapisano sygnału.');
   }
-  if (nwTotal != null && netWorth) {
-    const goal = netWorth.currency === 'USD' && nwTotal > 0 ? ` · cel ${hide ? '•••' : '1 mln USD'}: ${(Math.min(1, nwTotal / 1e6) * 100).toFixed(1)}%` : '';
-    lines.push(`Net worth: ${hide ? '•••' : netWorth.currency === 'USD' ? usd(nwTotal) : Math.round(nwTotal).toLocaleString('pl-PL') + ' ' + netWorth.currency}${goal}`);
-  }
-  lines.push('', 'Dashboard: https://claude.ai/artifact/AbZFSxu5kJMLF1PTCNm97k');
+  if (nwGoal != null || nwTxt) lines.push(`Net worth: ${[nwTxt, nwGoal != null ? `${(nwGoal * 100).toFixed(1)}% celu 1 mln USD` : null].filter(Boolean).join(' · ')}`);
+  lines.push('', `Dashboard: ${DASH}`);
   const subject = `Portfolio ${today}: ${day ? pct(day.r, 2) + ' dziś · ' : ''}strategia ${pct(stats.strategyReturn)}`;
   const text = lines.join('\n');
+
+  // HTML version (table layout + inline styles so it renders the same in Gmail, Apple Mail and Outlook)
   const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const html = `<div style="font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#1c1c1e;max-width:640px">`
-    + lines.map((l) => (l ? `<div>${esc(l).replace(/^ {2}/, '&nbsp;&nbsp;&nbsp;&nbsp;').replace(/(https:\/\/\S+)/, '<a href="$1">$1</a>')}</div>` : '<div style="height:10px"></div>')).join('')
-    .replace('<div>Podsumowanie', '<div style="font-size:18px;font-weight:700">Podsumowanie')
-    + (rows.length > 1 ? '<div style="height:12px"></div><img src="cid:att0" width="640" alt="Wykres: SDCA i RSPS od pierwszego sygnału" style="max-width:100%;height:auto">' : '')
-    + '</div>';
+  const tone = (v: number | null | undefined) => (v == null || !Number.isFinite(v) || Math.abs(v) < 5e-5 ? '#1c1c1e' : v > 0 ? '#1a7f37' : '#c62828');
+  const F = 'font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif';
+  const tile = (label: string, v: number | null, d = 2, sub = '') => `<td width="33%" style="padding:6px" valign="top"><div style="background:#f5f5f7;border-radius:12px;padding:14px 12px;text-align:center">`
+    + `<div style="font-size:12px;color:#6e6e73;text-transform:uppercase;letter-spacing:.04em">${esc(label)}</div>`
+    + `<div style="font-size:24px;font-weight:700;color:${tone(v)};margin-top:4px">${pct(v, d)}</div>`
+    + `<div style="font-size:12px;color:#6e6e73;margin-top:2px">${sub ? esc(sub) : '&nbsp;'}</div>` + '</div></td>';
+  const row = (label: string, val: string, color = '#1c1c1e', strong = false) => `<tr><td style="padding:9px 0;border-bottom:1px solid #ececf0;color:#3a3a3c">${esc(label)}</td>`
+    + `<td align="right" style="padding:9px 0;border-bottom:1px solid #ececf0;color:${color};font-weight:${strong ? 700 : 600};white-space:nowrap">${esc(val)}</td></tr>`;
+  const section = (title: string, body: string) => `<div style="font-size:13px;font-weight:700;color:#6e6e73;text-transform:uppercase;letter-spacing:.05em;margin:24px 0 4px">${esc(title)}</div>`
+    + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:15px">${body}</table>`;
+  let body = `<div style="font-size:22px;font-weight:700;color:#1c1c1e">Podsumowanie dnia</div><div style="font-size:14px;color:#6e6e73;margin-top:2px">${esc(dateTxt)}</div>`;
+  if (!sim) body += '<p style="font-size:15px;margin:20px 0">W aplikacji Portfolio nie ma jeszcze sygnałów.</p>';
+  else {
+    body += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px -6px 0;width:calc(100% + 12px)"><tr>`
+      + tile('Portfel dziś', day ? day.r : null) + tile('BTC dziś', btcDay, 2, btcNow > 0 ? usd(btcNow) : '') + tile('Strategia', stats.strategyReturn, 1, `od ${sim.start}`) + '</tr></table>';
+    if (alerts.length) body += `<div style="margin-top:16px;background:#fff4e5;border-left:4px solid #f59e0b;border-radius:8px;padding:12px 14px;font-size:14px;color:#7a4a00">${alerts.map((a) => '⚠ ' + esc(a)).join('<br>')}</div>`;
+    if (day) body += section('Dziś', row('SDCA', pct(day.rSdca, 2), tone(day.rSdca)) + row('RSPS', pct(day.rRsps, 2), tone(day.rRsps)));
+    body += section(`Od startu (${sim.start})`, row('Strategia', pct(stats.strategyReturn), tone(stats.strategyReturn), true) + row('SDCA', pct(stats.sdcaReturn), tone(stats.sdcaReturn))
+      + row('RSPS', pct(stats.rspsReturn), tone(stats.rspsReturn)) + row('BTC buy & hold', pct(stats.btcBuyHold), tone(stats.btcBuyHold)) + row('Strategia vs BTC', vsBtcTxt, tone(stats.vsBtc)));
+    body += section('Ryzyko', row('Max drawdown', pct(stats.risk.portfolio.maxDD), tone(stats.risk.portfolio.maxDD)) + row('Sharpe', sharpeTxt));
+    body += `<div style="margin-top:18px;font-size:14px;color:#3a3a3c"><b>Sygnały dziś:</b> ${sigTxt ? esc(sigTxt) : '<span style="color:#6e6e73">brak nowego sygnału</span>'}</div>`;
+  }
+  if (nwGoal != null || nwTxt) body += `<div style="margin-top:8px;font-size:14px;color:#3a3a3c"><b>Net worth:</b> ${esc([nwTxt, nwGoal != null ? `${(nwGoal * 100).toFixed(1)}% celu 1 mln USD` : null].filter(Boolean).join(' · '))}</div>`
+    + (nwGoal != null ? `<div style="margin-top:6px;height:6px;background:#ececf0;border-radius:3px"><div style="height:6px;width:${(nwGoal * 100).toFixed(1)}%;background:#1a7f37;border-radius:3px"></div></div>` : '');
+  if (rows.length > 1) body += `<div style="font-size:13px;font-weight:700;color:#6e6e73;text-transform:uppercase;letter-spacing:.05em;margin:24px 0 8px">Wykres od pierwszego sygnału</div><img src="cid:att0" width="600" alt="Wykres: SDCA i RSPS od pierwszego sygnału" style="display:block;width:100%;max-width:600px;height:auto;border-radius:8px">`;
+  body += `<div style="margin-top:24px;text-align:center"><a href="${DASH}" style="display:inline-block;background:#1c1c1e;color:#ffffff;text-decoration:none;font-weight:600;font-size:14px;padding:11px 22px;border-radius:999px">Otwórz dashboard</a></div>`;
+  const html = `<div style="background:#ffffff;padding:8px 0"><div style="${F};color:#1c1c1e;max-width:600px;margin:0 auto;padding:0 16px">${body}</div></div>`;
   return { stats, subject, text, html, svg: rows.length > 1 && sim ? chartSvg(sim.start, rows.map((r) => [r.date, r.sdcaGain, r.rspsGain] as [string, number, number])) : null };
 }
 
