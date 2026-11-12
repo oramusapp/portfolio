@@ -6,6 +6,7 @@ import { addDays } from '../lib/utc';
 import { price, usd } from '../lib/format';
 import { RebalanceView, SdcaOrderView, allocText } from './SignalHistory';
 import { IcClose, IcPlus, IcTrash } from './icons';
+import { parseSignal } from '../lib/parseSignal';
 
 interface Props {
   date: string; initial: Signal; book: PriceBook; editingExisting: boolean;
@@ -67,6 +68,27 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
   // tick a strategy to enter a new signal for it; unticked = no change today (DUPLICATED: no trades, holdings carried)
   const [sdcaNew, setSdcaNew] = useState(editingExisting ? initial.sdcaNew !== false : false);
   const [rspsNew, setRspsNew] = useState(editingExisting ? initial.rspsNew !== false : false);
+  // "Paste signal": the TRW message fills the form; the user still checks it and saves
+  const [pasteText, setPasteText] = useState('');
+  const [pasteNote, setPasteNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const applyPaste = (text: string) => {
+    const p = parseSignal(text);
+    const notes: string[] = [];
+    if (p.rsps) {
+      const rows: Pair[] = p.rsps.rows.map((r) => ({ sym: r.sym, v: String(r.pct), ...(r.short ? { short: true } : {}) }));
+      setAlloc(rows.length ? rows : [{ sym: CASH, v: '100' }]);
+      setRspsNew(true);
+      const longs = p.rsps.rows.filter((r) => !r.short), shorts = p.rsps.rows.filter((r) => r.short);
+      const shortSum = shorts.reduce((t, r) => t + r.pct, 0);
+      notes.push(`RSPS: ${longs.length} long, ${shorts.length} short${shorts.length ? ` (${+shortSum.toFixed(2)}%)` : ''} — the rest goes to CASH`);
+      if (p.rsps.shortTotalInMessage != null && Math.abs(p.rsps.shortTotalInMessage - shortSum) > 0.05)
+        notes.push(`the short lines add up to ${+shortSum.toFixed(2)}%, the message says ${p.rsps.shortTotalInMessage}% (rounded) — the lines are used`);
+    }
+    if (p.sdca) { setSdcaNew(true); setSide(p.sdca.side); setSdcaPct(String(p.sdca.pct)); notes.push(`SDCA: ${p.sdca.side} ${p.sdca.pct}% of the SDCA cash`); }
+    if (p.unknown.length) notes.push(`not on the RSPS list, skipped: ${p.unknown.join(', ')}`);
+    if (!p.rsps && !p.sdca) { setPasteNote({ ok: false, text: 'No signal found in this text. Copy the whole message from TRW (RSPS / Short Module / SDCA).' }); return; }
+    setPasteNote({ ok: !p.unknown.length, text: 'Filled in: ' + notes.join(' · ') + '. Check it below, then save.' });
+  };
 
   // today's signal: live prices (stored on save as the execution prices); an older signal keeps the prices it was saved with
   const live = date === today;
@@ -126,6 +148,17 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
             </div>}</div>
           <button className="icon" onClick={onClose}><IcClose /></button>
         </div>
+
+        <details className="card paste-signal" open={!editingExisting}>
+          <summary>Paste signal from TRW</summary>
+          <textarea rows={3} value={pasteText} placeholder="Paste the RSPS / Short Module and/or SDCA message here"
+            onChange={(e) => setPasteText(e.target.value)}
+            onPaste={(e) => { const t = e.clipboardData.getData('text'); if (t) { e.preventDefault(); setPasteText(t); applyPaste(t); } }} />
+          <div className="paste-row">
+            <button type="button" className="btn small" disabled={!pasteText.trim()} onClick={() => applyPaste(pasteText)}>Fill the form</button>
+            {pasteNote && <span className={`small ${pasteNote.ok ? 'pos' : 'warn'}`}>{pasteNote.text}</span>}
+          </div>
+        </details>
 
         <div className="split">
           <div className="card pane">
