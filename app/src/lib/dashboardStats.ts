@@ -11,9 +11,12 @@ export interface DashboardStats {
   strategyReturn: number | null; sdcaReturn: number | null; rspsReturn: number | null; btcBuyHold: number | null; vsBtc: number | null;
   days: number; signals: number; firstSignal: string | null; lastSignal: string | null;
   risk: { portfolio: StatsBlock; sdca: StatsBlock; rsps: StatsBlock; btc: StatsBlock };
+  /** Daily cumulative returns for the dashboard chart: [date, SDCA+RSPS, SDCA, RSPS], oldest first, max 400 days. */
+  series: [string, number | null, number | null, number | null][];
 }
 
 const n = (v: number | undefined | null): number | null => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 1e6) / 1e6 : null);
+const g4 = (v: number | undefined | null): number | null => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 1e4) / 1e4 : null);
 const block = (s: RiskStats): StatsBlock => ({ total: n(s.total), maxDD: n(s.maxDD), vol: n(s.vol), sharpe: n(s.sharpe), sortino: n(s.sortino) });
 
 export function dashboardStats(input: {
@@ -38,6 +41,7 @@ export function dashboardStats(input: {
       sdca: block(riskStats(rows.map((r) => r.rSdca))),
       rsps: block(riskStats(rows.map((r) => r.rRsps))),
       btc: block(riskStats(input.btcDaily))
-    }
+    },
+    series: rows.slice(-400).map((r) => [r.date, g4(r.totalGain), g4(r.sdcaGain), g4(r.rspsGain)])
   };
 }
