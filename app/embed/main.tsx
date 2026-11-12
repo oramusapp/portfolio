@@ -9,7 +9,7 @@ import fontCss from '@fontsource/share-tech-mono/400.css?inline';
 import { migrate } from '../src/lib/storage';
 import { applyTheme, initialTheme, setThemeHost } from './theme';
 import { installFetch, setData, type EmbedData } from './shim';
-import { setPlatformHost } from './platform';
+import { setPlatformHost, currentStats, clearStats } from './platform';
 
 const scoped = css
   .replace(/:root\[data-theme=['"]?(\w+)['"]?\]/g, ":host([data-theme='$1'])")
@@ -109,6 +109,6 @@ function askInWindow(message: string): Promise<boolean> {
   });
 }
 
-function unmount() { if (root) { root.unmount(); root = null; } rootEl = null; shadowRef = null; notify = () => {}; }
+function unmount() { if (root) { root.unmount(); root = null; } rootEl = null; shadowRef = null; notify = () => {}; clearStats(); }
 
-(window as any).PortfolioEmbed = { mount, unmount, update: setData };
+(window as any).PortfolioEmbed = { mount, unmount, update: setData, stats: currentStats };

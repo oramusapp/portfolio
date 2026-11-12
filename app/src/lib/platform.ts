@@ -1,6 +1,7 @@
 // Things the browser provides that the app also needs inside the "Mój dzień" dashboard, where they work differently:
 // a yes/no question, saving a file and starting over after an import. The embedded build (vite.embed.config.ts)
 // swaps this file for embed/platform.ts.
+import type { DashboardStats } from './dashboardStats';
 
 /** Yes/no question before a change that replaces data. */
 export async function ask(message: string): Promise<boolean> { return confirm(message); }
@@ -19,3 +20,6 @@ export async function saveFile(name: string, text: string) {
   a.href = URL.createObjectURL(blob); a.download = name; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
+
+/** The app's current dashboard stats; only the embedded build uses them (no-op here). */
+export function registerStats(_build: () => DashboardStats, _ready: boolean) { /* standalone app: nothing to do */ }
