@@ -26,7 +26,6 @@ import { CornerPanel, type CornerTab } from './components/CornerPanel';
 import { NotesTab, type Note } from './components/Notes';
 import { EtfApp } from './EtfApp';
 import { PortfolioView } from './components/PortfolioView';
-import { DashboardExport } from './components/DashboardExport';
 import { registerStats } from './lib/platform';
 import { dashboardStats } from './lib/dashboardStats';
 
@@ -94,7 +93,7 @@ export default function App() {
     'BTC', 'SOL', ...(chartSym === CS2 ? [] : [chartSym]), ...bench.extra, ...formSyms, ...Object.keys(holdings?.rsps.units ?? {}),
     ...sorted.flatMap((s) => [...Object.keys(s.rsps.alloc), ...Object.keys(s.rsps.units)])
   ];
-  const { book, errors, loading, liveAt } = usePrices(needed, from);
+  const { book, errors, loading, liveAt, pricesAt } = usePrices(needed, from);
 
   // coins that are or were short: Hyperliquid highs (liquidation) and funding
   const shortSyms = useMemo(() => [...new Set(sorted.flatMap((s) => [...Object.entries(s.rsps.alloc), ...Object.entries(s.rsps.units)].filter(([k, v]) => v < 0 && k !== CASH).map(([k]) => k)))], [sorted]);
@@ -217,10 +216,14 @@ export default function App() {
         {PF_TABS.map(([k, label]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}</button>)}
       </div>
 
+      {!(liveAt && now - liveAt < 60_000) && pricesAt && now - pricesAt > 120_000 && (
+        <div className="warn offline-note">
+          <b>No live prices{typeof navigator !== 'undefined' && navigator.onLine === false ? ' (offline)' : ''}.</b> Values and order amounts use the last prices this device has, from {new Date(pricesAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} — approximate. Selling a whole position is exact; partial amounts and buys are approximate, so check the price on the exchange before trading.
+        </div>
+      )}
       {tab === 'crypto' ? <>
       <Kpis value={valueNow} strategy={last?.totalGain ?? NaN} btc={btcBh} sdcaValue={holdings ? hSdca : last?.sdcaValue ?? 0} rspsValue={holdings ? hRsps : last?.rspsValue ?? 0} onOpenPortfolio={() => setPortfolioOpen(true)} hidden={hideValue} onToggleHidden={() => setHideValue(!hideValue)}
         gains={invested > 0 ? valueNow / invested - 1 : NaN} />
-      <DashboardExport build={buildStats} />
 
       <section className="card panel">
         <div className="panel-head">
