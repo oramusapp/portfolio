@@ -365,3 +365,6 @@ table.mini td.wrap { white-space: normal; }
 .paste-signal summary { cursor: pointer; font-weight: 600; }
 .paste-signal textarea { width: 100%; margin-top: 8px; font: inherit; font-size: 13px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px; resize: vertical; }
 .paste-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+
+/* no live prices: last prices of this device are used */
+.offline-note { margin: 10px 0; padding: 10px 12px; border: 1px solid var(--warn); border-radius: 10px; font-size: 14px; line-height: 1.45; }
