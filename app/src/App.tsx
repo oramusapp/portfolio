@@ -26,7 +26,6 @@ import { CornerPanel, type CornerTab } from './components/CornerPanel';
 import { NotesTab, type Note } from './components/Notes';
 import { EtfApp } from './EtfApp';
 import { PortfolioView } from './components/PortfolioView';
-import { DashboardExport } from './components/DashboardExport';
 import { registerStats } from './lib/platform';
 import { dashboardStats } from './lib/dashboardStats';
 
@@ -225,7 +224,6 @@ export default function App() {
       {tab === 'crypto' ? <>
       <Kpis value={valueNow} strategy={last?.totalGain ?? NaN} btc={btcBh} sdcaValue={holdings ? hSdca : last?.sdcaValue ?? 0} rspsValue={holdings ? hRsps : last?.rspsValue ?? 0} onOpenPortfolio={() => setPortfolioOpen(true)} hidden={hideValue} onToggleHidden={() => setHideValue(!hideValue)}
         gains={invested > 0 ? valueNow / invested - 1 : NaN} />
-      <DashboardExport build={buildStats} />
 
       <section className="card panel">
         <div className="panel-head">
