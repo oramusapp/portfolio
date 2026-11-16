@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { priceOn, type PriceBook } from '../lib/prices';
 import { CASH, TOKENS, emojiOf } from '../lib/tokens';
-import { frozenCash, type SdcaState, type RspsState } from '../lib/engine';
+import { equityCash, frozenCash, internalCash, type SdcaState, type RspsState } from '../lib/engine';
 import { num, price, usd } from '../lib/format';
 import { PairRows, toPairs, n, signed, type Pair } from './SignalForm';
 import { IcClose } from './icons';
@@ -25,15 +25,21 @@ export function HoldingsPanel({ initial, book, today, onNeed, onSave, onClose, f
   const [btc, setBtc] = useState(String(+initial.sdca.btc.toFixed(8)));
   const [sdcaCash, setSdcaCash] = useState(String(+initial.sdca.cash.toFixed(2)));
   const [units, setUnits] = useState<Pair[]>(toPairs(initial.rsps.units));
-  const [rspsCash, setRspsCash] = useState(String(+initial.rsps.cash.toFixed(2)));
+  // RSPS cash is typed as the exchange shows it (USDT equity); null = not edited → derived from the saved holdings
+  const [rspsCashEq, setRspsCashEq] = useState<string | null>(null);
 
   const px = (s: string) => priceOn(book, s, today);
+  const initEq = equityCash(initial.rsps.cash, initial.rsps.units, px);
+  const rspsCash = rspsCashEq ?? (Number.isFinite(initEq) ? String(+initEq.toFixed(2)) : '');
+  const setRspsCash = (v: string) => setRspsCashEq(v);
   useEffect(() => { onNeed(units.map((u) => u.sym)); }, [units.map((u) => u.sym).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const btcValue = n(btc) * px('BTC');
   const sdcaTotal = btcValue + n(sdcaCash);
   const tokenValue = (u: Pair) => signed(u) * px(u.sym);   // a short counts as negative
-  const rspsTotal = units.reduce((t, u) => t + (n(u.v) > 0 ? tokenValue(u) : 0), n(rspsCash));
+  // equity already contains the shorts (margin + unrealized P/L) → only the longs are added
+  const rspsTotal = units.reduce((t, u) => t + (n(u.v) > 0 && !u.short ? tokenValue(u) : 0), n(rspsCash));
+  const unitsSigned = Object.fromEntries(units.filter((u) => n(u.v) > 0).map((u) => [u.sym, signed(u)]));
   const bad = [btc, sdcaCash, rspsCash, ...units.map((u) => u.v)].some((v) => !(n(v) >= 0));
   // cash frozen by the open shorts (margin + entry value) — not free to withdraw
   const entryPx = (s: string) => entry?.[s] ?? NaN;
@@ -44,7 +50,7 @@ export function HoldingsPanel({ initial, book, today, onNeed, onSave, onClose, f
     if (bad) return;
     onSave({
       sdca: { btc: n(btc), cash: n(sdcaCash) },
-      rsps: { cash: n(rspsCash), units: Object.fromEntries(units.filter((u) => n(u.v) > 0).map((u) => [u.sym, signed(u)])) },
+      rsps: { cash: internalCash(n(rspsCash), unitsSigned, px), units: unitsSigned },
       updatedAt: Date.now()
     });
   };
@@ -71,8 +77,9 @@ export function HoldingsPanel({ initial, book, today, onNeed, onSave, onClose, f
             <div className="dim small">Tokens and amounts:</div>
             <PairRows rows={units} setRows={setUnits} options={TOKENS.map((t) => t.sym)} unit="units" placeholder="0" sides
               extra={(u) => <span className="val">{usd(tokenValue(u), 2)}</span>} />
-            <label>{emojiOf(CASH)} Cash reserve<div className="field"><input inputMode="decimal" value={rspsCash} onChange={(e) => setRspsCash(e.target.value)} /><span className="unit">USD</span></div></label>
-            {frozen > 0 && <div className={n(rspsCash) < frozen - 0.005 ? 'warn small' : 'dim small'}>🔒 {usd(frozen, 2)} of it is frozen by the shorts (margin + entry value) · free: <b>{usd(n(rspsCash) - frozen, 2)}</b></div>}
+            <label>{emojiOf(CASH)} Cash — USDT equity on the exchange<div className="field"><input inputMode="decimal" value={rspsCash} onChange={(e) => setRspsCash(e.target.value)} /><span className="unit">USD</span></div></label>
+            <div className="dim small">Type what the exchange shows (Bybit: USDT equity = balance with the shorts' margin and unrealized P/L). The shorts are already in it, so only longs are added.</div>
+            {frozen > 0 && <div className={n(rspsCash) < frozen / 2 - 0.005 ? 'warn small' : 'dim small'}>🔒 {usd(frozen / 2, 2)} of it is the margin of the shorts (1×) · free ≈ <b>{usd(n(rspsCash) - frozen / 2, 2)}</b></div>}
             {units.length > 0 && <div className="dim small">{units.map((u) => `${u.sym} ${u.short ? 'short ' : ''}${num(n(u.v), 6)} @ ${price(px(u.sym))}`).join(' · ')}</div>}
           </div>
         </div>

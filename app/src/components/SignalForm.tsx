@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { MIN_SDCA_BUY_PCT, allocError, fillCash, rebalance, sdcaOrder, type Signal } from '../lib/engine';
+import { equityCash, internalCash, MIN_SDCA_BUY_PCT, allocError, fillCash, rebalance, sdcaOrder, type Signal } from '../lib/engine';
 import { priceOn, type PriceBook } from '../lib/prices';
 import { ALL_ASSETS, CASH, TOKENS, emojiOf } from '../lib/tokens';
 import { addDays } from '../lib/utc';
@@ -63,7 +63,8 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
   const [sdcaCash, setSdcaCash] = useState(String(+initial.sdca.cash.toFixed(2)));
   const [sdcaBtc, setSdcaBtc] = useState(String(+initial.sdca.btc.toFixed(8)));
   const [alloc, setAlloc] = useState<Pair[]>(toPairs(initial.rsps.alloc));
-  const [rspsCash, setRspsCash] = useState(String(+initial.rsps.cash.toFixed(2)));
+  // RSPS cash is typed as the exchange shows it (USDT equity); null = not edited → derived from the saved holdings
+  const [rspsCashEq, setRspsCashEq] = useState<string | null>(null);
   const [units, setUnits] = useState<Pair[]>(toPairs(initial.rsps.units));
   // tick a strategy to enter a new signal for it; unticked = no change today (DUPLICATED: no trades, holdings carried)
   const [sdcaNew, setSdcaNew] = useState(editingExisting ? initial.sdcaNew !== false : false);
@@ -103,7 +104,10 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
   const { alloc: allocRec, added: cashAdded } = fillCash(Object.fromEntries(alloc.map((r) => [r.sym, signed(r)])));
   const [confirmCash, setConfirmCash] = useState(false);
   const unitsRec = Object.fromEntries(units.filter((r) => n(r.v) > 0).map((r) => [r.sym, signed(r)]));
-  const rspsInput = { alloc: allocRec, cash: n(rspsCash), units: unitsRec };
+  const initEq = equityCash(initial.rsps.cash, initial.rsps.units, px);
+  const rspsCash = rspsCashEq ?? (Number.isFinite(initEq) ? String(+initEq.toFixed(2)) : '');
+  const rspsEq = n(rspsCash);
+  const rspsInput = { alloc: allocRec, cash: internalCash(rspsEq, unitsRec, px), units: unitsRec };
 
   const btcPx = px('BTC');
   const order = useMemo(() => (Number.isFinite(btcPx) ? sdcaOrder(sdcaInput, btcPx, fee) : null), [btcPx, side, sdcaPct, sdcaCash, sdcaBtc, fee]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -196,7 +200,7 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
               <div className="dup-box">
                 <span className="tag dup">DUPLICATED</span>
                 <div>No new RSPS signal — no rebalance today. The allocation stays: <b>{allocText(initial.rsps.alloc) || '—'}</b></div>
-                <div>Holdings stay: <b>{Object.entries(unitsRec).map(([k, u]) => `${fmtUnits(u)} ${k}`).join(', ') || 'no tokens'}</b> + <b>{usd(rspsInput.cash, 2)}</b> cash.</div>
+                <div>Holdings stay: <b>{Object.entries(unitsRec).map(([k, u]) => `${fmtUnits(u)} ${k}`).join(', ') || 'no tokens'}</b> + <b>{usd(rspsEq, 2)}</b> cash (USDT equity).</div>
                 <div className="dim small">Tick “New signal today” to enter a new allocation.</div>
               </div>
             ) : <>
@@ -205,7 +209,8 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
             <div className={Math.abs(sum - 100) <= 0.01 ? 'pos small' : 'warn small'}>Sum: {+sum.toFixed(2)}%{cashAdded > 0 && <> — the remaining <b>{+cashAdded.toFixed(4)}%</b> goes to {emojiOf(CASH)} CASH (CASH {+allocRec[CASH].toFixed(4)}% in total)</>}</div>
             {shorts.length > 0 && <div className="dim small">Short {+shorts.reduce((t, r) => t + n(r.v), 0).toFixed(2)}% as a perpetual short at <b>1× leverage</b> (margin = position size): it gains when the price falls and loses when it rises. Funding (Hyperliquid) is counted, and a short is liquidated — its margin lost — if the price rises to about 2× entry / (1 + maintenance margin).</div>}
             <div className="dim small" style={{ marginTop: 10 }}>Current RSPS part:</div>
-            <label>{emojiOf(CASH)} RSPS cash<div className="field"><input inputMode="decimal" value={rspsCash} onChange={(e) => setRspsCash(e.target.value)} /><span className="unit">USD</span></div></label>
+            <label>{emojiOf(CASH)} RSPS cash — USDT equity on the exchange<div className="field"><input inputMode="decimal" value={rspsCash} onChange={(e) => setRspsCashEq(e.target.value)} /><span className="unit">USD</span></div></label>
+            <div className="dim small">Type what the exchange shows (Bybit: USDT equity = balance with the shorts' margin and unrealized P/L). The app adds the open shorts itself.</div>
             <PairRows rows={units} setRows={setUnits} options={TOKENS.map((t) => t.sym)} unit="units" placeholder="0" sides extra={(u) => <span className="val">{usd(signed(u) * px(u.sym), 2)}</span>} />
             <h4 style={{ marginTop: 12 }}>Orders</h4>
             <RebalanceView p={plan} live={live} />
@@ -219,7 +224,7 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
             {nothing
               ? <>No new signal ticked — nothing to save. {editingExisting ? 'To make this day DUPLICATED, delete its signal (Edit → bin).' : 'Today stays DUPLICATED.'}</>
               : live && (!rspsNew || !plan.missing.length)
-                ? <>After saving, Portfolio holdings become — <b>SDCA:</b> {fmtUnits(afterSdca.btc)} BTC + {usd(afterSdca.cash, 2)} · <b>RSPS:</b> {Object.entries(afterRsps.units).map(([k, u]) => `${fmtUnits(u)} ${k}`).join(', ') || 'no tokens'} + {usd(afterRsps.cash, 2)}</>
+                ? <>After saving, Portfolio holdings become — <b>SDCA:</b> {fmtUnits(afterSdca.btc)} BTC + {usd(afterSdca.cash, 2)} · <b>RSPS:</b> {Object.entries(afterRsps.units).map(([k, u]) => `${fmtUnits(u)} ${k}`).join(', ') || 'no tokens'} + {usd(equityCash(afterRsps.cash, afterRsps.units, px), 2)} USDT equity</>
                 : !live ? 'Editing an older signal does not change Portfolio holdings.' : null}
           </div>
           <button className="btn ghost" onClick={onClose}>Cancel</button>
