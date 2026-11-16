@@ -6,7 +6,9 @@
 // only %); `png` is the chart of SDCA and RSPS since the first signal (sent as a normal attachment; the HTML only mentions it, so mail apps show it once).
 // Usage: npx tsx scripts/daily-report.ts <folder-or-file> [--now=ISO] [--png=path] [--week]
 // --week: the weekly summary (last 7 days) instead of the daily one.
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+// --backup=path: also writes the saved app data as a backup file the app imports (Backup → Import), so a rotation
+//   can be done in the GitHub Pages app when the dashboard (claude.ai or Google Sheets) is down.
+import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { createRequire } from 'node:module';
 import { benchmark, bySignalOrder, simulate, type PerpData, type Signal } from '../src/lib/engine';
@@ -32,6 +34,18 @@ export function readSaved(path: string): Record<string, string> {
     for (const [k, v] of Object.entries(obj)) take(k, v);
   }
   return out;
+}
+
+/** Backup file in the app's format (storage.ts exportBackup / importBackup): app, schema 1, data = every 'pp.' key but the archive. */
+export function backupFile(saved: Record<string, string>, nowMs = Date.now()) {
+  const data: Record<string, string> = {};
+  let archive: unknown[] = [];
+  for (const [k, v] of Object.entries(saved)) {
+    if (!k.startsWith('pp.')) continue;
+    if (k === 'pp.archive') { try { const a = JSON.parse(v); if (Array.isArray(a)) archive = a; } catch { /* unreadable archive is left out */ } }
+    else data[k] = v;
+  }
+  return { app: 'portfolio-performance' as const, schema: 1, created: new Date(nowMs).toISOString(), data, archive };
 }
 
 const parse = <T,>(saved: Record<string, string>, key: string, fallback: T): T => {
@@ -234,10 +248,23 @@ if (process.argv[2]) {
   const nowArg = process.argv.find((a) => a.startsWith('--now='));
   const nowMs = nowArg ? Date.parse(nowArg.slice(6)) : Date.now();
   const pngArg = process.argv.find((a) => a.startsWith('--png='));
-  dailyReport(readSaved(process.argv[2]), nowMs, { week: process.argv.includes('--week') }).then(async (r) => {
+  const backupArg = process.argv.find((a) => a.startsWith('--backup='));
+  const savedData = readSaved(process.argv[2]);
+  let backup: string | null = null;
+  if (backupArg) {
+    const b = backupFile(savedData, nowMs);
+    if (Object.keys(b.data).length) { backup = backupArg.slice(9); writeFileSync(backup, JSON.stringify(b)); }
+  }
+  dailyReport(savedData, nowMs, { week: process.argv.includes('--week') }).then(async (r) => {
     let png: string | null = null;
     if (pngArg && r.svg) { png = pngArg.slice(6); await svgToPng(r.svg, png); }
     const { svg: _svg, ...rest } = r;
-    process.stdout.write(JSON.stringify({ ...rest, png }) + '\n');
+    if (backup) {
+      const note = 'W załączniku kopia danych Portfolio. Awaryjnie, gdy dashboard nie działa: otwórz SKB Portfolio (https://oramusapp.github.io/portfolio/) → Backup → Import i wybierz ten plik.';
+      rest.text = rest.text + '\n\n' + note;
+      rest.html = rest.html.replace(/<\/body>/i, '<p style="font-size:13px;color:#8b988f">' + note.replace('https://oramusapp.github.io/portfolio/', '<a href="https://oramusapp.github.io/portfolio/">oramusapp.github.io/portfolio</a>') + '</p></body>');
+      if (!/<\/body>/i.test(r.html)) rest.html += '<p style="font-size:13px;color:#8b988f">' + note + '</p>';
+    }
+    process.stdout.write(JSON.stringify({ ...rest, png, backup }) + '\n');
   }, (e) => { console.error(e); process.exit(1); });
 }

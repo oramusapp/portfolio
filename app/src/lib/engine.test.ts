@@ -251,3 +251,17 @@ describe('frozen cash of shorts', () => {
     expect(frozenCash({ OP: -10 }, () => NaN)).toBe(0);
   });
 });
+
+describe('exchange equity ↔ internal cash', () => {
+  it('converts the USDT equity shown by the exchange into the internal cash and back', async () => {
+    const { equityCash, internalCash, shortNotional } = await import('./engine');
+    const units = { OP: -10, SOL: 2 }, px = (s: string) => (s === 'OP' ? 3 : 100);
+    expect(shortNotional(units, px)).toBeCloseTo(30);
+    expect(internalCash(1000, units, px)).toBeCloseTo(1030);
+    expect(equityCash(1030, units, px)).toBeCloseTo(1000);
+    // the RSPS value = equity + longs (the short is already inside the equity)
+    const internal = internalCash(1000, units, px);
+    expect(internal + -10 * 3 + 2 * 100).toBeCloseTo(1000 + 200);
+    expect(internalCash(500, { SOL: 1 }, px)).toBe(500);   // long-only: unchanged
+  });
+});

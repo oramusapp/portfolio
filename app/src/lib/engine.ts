@@ -102,6 +102,16 @@ export interface RebalanceRow {
 }
 export interface RebalancePlan { total: number; rows: RebalanceRow[]; after: RspsState; missing: string[]; fee: number; }
 
+/** Current value of the open shorts: Σ |units| × price (NaN if a price is missing). */
+export function shortNotional(units: Record<string, number>, px: (sym: string) => number): number {
+  return Object.entries(units).reduce((t, [s, u]) => (u < 0 ? t + -u * px(s) : t), 0);
+}
+/** RSPS cash as the exchange shows it ("USDT equity" on Bybit: balance incl. the shorts' margin and unrealized P/L).
+ *  Inside the app the cash also holds the entry value of the coins sold short (see the model above), so
+ *  equity = internal cash − Σ |units| × price and internal cash = equity + Σ |units| × price. Long-only: the same number. */
+export const equityCash = (cash: number, units: Record<string, number>, px: (sym: string) => number) => cash - shortNotional(units, px);
+export const internalCash = (equity: number, units: Record<string, number>, px: (sym: string) => number) => equity + shortNotional(units, px);
+
 /** Cash frozen by open 1× shorts: the margin plus the entry value of the coins sold = 2 × |units| × entry price.
  *  It stays in RSPS cash for the valuation (cash + Σ units × price), but it is not free: it cannot be spent or
  *  withdrawn while the short is open. A short without a known entry price is counted at `fallback` (e.g. today's price). */

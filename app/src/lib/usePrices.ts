@@ -6,9 +6,21 @@ import { addDays, todayUtc } from './utc';
 const REFRESH_MS = 60_000;   // daily candles (the open one included)
 const LIVE_MS = 10_000;      // live prices for today
 
+// Last known prices kept on this device, so the app still values holdings and sizes orders when prices cannot be
+// fetched (offline, exchange down). Not a 'pp.' key on purpose: it is not part of backups and not synced to the dashboard.
+const CACHE = 'ppcache.prices.v1';
+interface PriceCache { book: PriceBook; liveAt: number | null; }
+function readCache(): PriceCache {
+  try { const c = JSON.parse(localStorage.getItem(CACHE) ?? 'null') as PriceCache | null; if (c && c.book && typeof c.book === 'object') return c; } catch { /* unreadable: start empty */ }
+  return { book: {}, liveAt: null };
+}
+function writeCache(c: PriceCache) { try { localStorage.setItem(CACHE, JSON.stringify(c)); } catch { /* full or blocked: keep prices in memory only */ } }
+
 /** Daily closes for `syms` from `from` onwards; the open candle of today is refreshed every minute. */
 export function usePrices(syms: string[], from: string) {
-  const [book, setBook] = useState<PriceBook>({});
+  const cached = useRef<PriceCache | null>(null);
+  if (!cached.current) cached.current = readCache();
+  const [book, setBook] = useState<PriceBook>(() => cached.current!.book);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(0);
   const loaded = useRef(new Map<string, string>());   // sym → earliest day fetched
@@ -50,6 +62,24 @@ export function usePrices(syms: string[], from: string) {
 
   // live price = today's value for every token, so orders and holdings follow the market while the app is open
   const [liveAt, setLiveAt] = useState<number | null>(null);
+  // time of the newest prices this device has, also from an earlier visit (shown while offline)
+  const [pricesAt, setPricesAt] = useState<number | null>(() => cached.current!.liveAt);
+  useEffect(() => { if (liveAt) setPricesAt(liveAt); }, [liveAt]);
+  // save at most once a minute, and when the app goes to the background
+  const latest = useRef<PriceCache>({ book, liveAt: pricesAt });
+  latest.current = { book, liveAt: pricesAt };
+  const lastWrite = useRef(0);
+  useEffect(() => {
+    const wait = Math.max(1500, 60_000 - (Date.now() - lastWrite.current));
+    const t = setTimeout(() => { lastWrite.current = Date.now(); writeCache(latest.current); }, wait);
+    return () => clearTimeout(t);
+  }, [book, pricesAt]);
+  useEffect(() => {
+    const flush = () => { if (document.visibilityState === 'hidden') { lastWrite.current = Date.now(); writeCache(latest.current); } };
+    document.addEventListener('visibilitychange', flush);
+    window.addEventListener('pagehide', flush);
+    return () => { document.removeEventListener('visibilitychange', flush); window.removeEventListener('pagehide', flush); };
+  }, []);
   useEffect(() => {
     let alive = true;
     const tick = async () => {
@@ -78,5 +108,5 @@ export function usePrices(syms: string[], from: string) {
     };
   }, []);
 
-  return { book, errors, loading: loading > 0, liveAt };
+  return { book, errors, loading: loading > 0, liveAt, pricesAt };
 }
