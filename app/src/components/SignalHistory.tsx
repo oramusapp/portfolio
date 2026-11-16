@@ -55,24 +55,29 @@ export function RebalanceView({ p, live, partLabel = 'RSPS part', liveText }: { 
   const pctTxt = (v: number) => `${Math.abs(v).toFixed(1)}%${v < -0.05 ? ' short' : ''}`;
   const row = (r: RebalanceRow, side: 'SELL' | 'BUY' | 'HOLD') => {
     const lab = label(r, side);
+    // main signal: % now → % target and the $ to buy / sell; the coin amount is only a helper
     return (
       <tr key={r.sym}>
         <td><span className={`badge ${lab === 'SHORT' ? 'sell short' : lab === 'COVER' ? 'buy cover' : side.toLowerCase()}`}>{lab}</span></td>
-        <td>{emojiOf(r.sym)} <b>{side === 'HOLD' ? '' : unitsAmt(Math.abs(r.deltaUnits))} {r.sym}</b></td>
-        <td>{side === 'HOLD' ? '—' : `${side === 'SELL' ? '≈ ' : ''}${usd(Math.abs(r.deltaUsd), 2)}`}</td>
-        <td className="dim">{pctTxt(r.curPct)} → {pctTxt(r.tgtPct)}</td>
-        <td className="dim">{price(r.price)}</td>
+        <td>{emojiOf(r.sym)} <b>{r.sym}</b><div className="dim small">{price(r.price)}</div></td>
+        <td><b>{pctTxt(r.curPct)} → {pctTxt(r.tgtPct)}</b><div className="dim small">{usd(Math.abs(r.curUsd), 2)} → {usd(Math.abs(r.tgtUsd), 2)}</div></td>
+        <td>{side === 'HOLD' ? '—' : <><b className={side === 'SELL' ? 'neg' : 'pos'}>{side === 'SELL' ? '−' : '+'}{usd(Math.abs(r.deltaUsd), 2)}</b><div className="dim small">≈ {unitsAmt(Math.abs(r.deltaUnits))} {r.sym}</div></>}</td>
       </tr>
     );
   };
   return (
     <div className="order">
-      <div className="dim small">{partLabel} {usd(p.total, 2)} = {partLabel === 'RSPS part' ? 'tokens' : 'positions'} {usd(p.total - cash.curUsd, 2)} + cash {usd(cash.curUsd, 2)} · prices {liveText ?? (live ? 'live' : 'at save')}</div>
+      {(() => {
+        const shortNow = tokens.reduce((t, r) => t + (r.curUnits < 0 ? -r.curUsd : 0), 0);
+        const longs = tokens.reduce((t, r) => t + (r.curUnits > 0 ? r.curUsd : 0), 0);
+        const eq = cash.curUsd - shortNow;
+        return <div className="dim small">{partLabel} {usd(p.total, 2)} = {partLabel === 'RSPS part' ? 'USDT equity' : 'cash'} {usd(eq, 2)}{longs > MIN_USD ? <> + coins {usd(longs, 2)}</> : null}{shortNow > MIN_USD ? <> (open shorts {usd(shortNow, 2)} are inside the equity)</> : null} · every % is of the whole {partLabel === 'RSPS part' ? 'RSPS' : 'portfolio'} value · prices {liveText ?? (live ? 'live' : 'at save')}</div>;
+      })()}
       {sells.length + buys.length === 0
         ? <div className="act-line"><span className="badge hold">HOLD</span>Nothing to trade — already on target.</div>
         : (
           <table className="mini orders">
-            <thead><tr><th /><th>Amount</th><th>For</th><th>Now → target</th><th>Price</th></tr></thead>
+            <thead><tr><th /><th>Coin</th><th>Allocation now → target</th><th>Buy / sell</th></tr></thead>
             <tbody>{sells.map((r) => row(r, 'SELL'))}{buys.map((r) => row(r, 'BUY'))}{holds.map((r) => row(r, 'HOLD'))}</tbody>
           </table>
         )}
@@ -80,6 +85,10 @@ export function RebalanceView({ p, live, partLabel = 'RSPS part', liveText }: { 
       {(() => {
         // cash frozen by the shorts after the trade: margin + entry value at the execution price
         const frozen = frozenCash(p.after.units, (s) => p.rows.find((r) => r.sym === s)?.price ?? NaN);
+        const pxOf = (s: string) => p.rows.find((r) => r.sym === s)?.price ?? NaN;
+        const eqNow = cash.curUsd - tokens.reduce((t, r) => t + (r.curUnits < 0 ? -r.curUsd : 0), 0);
+        const eqAfter = p.after.cash - Object.entries(p.after.units).reduce((t, [s, u]) => t + (u < 0 ? -u * pxOf(s) : 0), 0);
+        if (partLabel === 'RSPS part' && hasShort) return <div className="cash-line">{emojiOf(CASH)} USDT equity: {usd(eqNow, 2)} → <b>{usd(eqAfter, 2)}</b> <span className="dim">({(eqAfter / p.total * 100).toFixed(1)}% of RSPS)</span>{frozen > MIN_USD ? <> · of it margin of the 1× shorts ≈ {usd(frozen / 2, 2)}, free ≈ <b>{usd(eqAfter - frozen / 2, 2)}</b></> : null}</div>;
         return frozen > MIN_USD
           ? <div className="cash-line">{emojiOf(CASH)} Cash: {usd(cash.curUsd, 2)} → <b>{usd(p.after.cash, 2)}</b> — free <b>{usd(p.after.cash - frozen, 2)}</b> <span className="dim">({((p.after.cash - frozen) / p.total * 100).toFixed(1)}% of {partLabel === 'RSPS part' ? 'RSPS' : 'portfolio'})</span> + 🔒 {usd(frozen, 2)} frozen by the 1× shorts <span className="dim">(margin + entry value, not free while the short is open)</span></div>
           : <div className="cash-line">{emojiOf(CASH)} Cash: {usd(cash.curUsd, 2)} → <b>{usd(p.after.cash, 2)}</b> <span className="dim">({cash.tgtPct.toFixed(1)}% of {partLabel === 'RSPS part' ? 'RSPS' : 'portfolio'}{hasShort ? ', including the margin of the 1× shorts' : ''})</span></div>;
