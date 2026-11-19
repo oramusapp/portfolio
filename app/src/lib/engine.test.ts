@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allocError, costBasis, fillCash, frozenCash, liqPrice, rebalance, sdcaOrder, simulate, benchmark, type PerpData, type Signal } from './engine';
+import { allocError, costBasis, equityCash, fillCash, frozenCash, internalCash, liqPrice, perpMargin, rebalance, sdcaOrder, simulate, benchmark, type PerpData, type Signal } from './engine';
 import type { PriceBook } from './prices';
 
 describe('SDCA', () => {
@@ -263,5 +263,90 @@ describe('exchange equity ↔ internal cash', () => {
     const internal = internalCash(1000, units, px);
     expect(internal + -10 * 3 + 2 * 100).toBeCloseTo(1000 + 200);
     expect(internalCash(500, { SOL: 1 }, px)).toBe(500);   // long-only: unchanged
+  });
+});
+
+describe('RSPS leverage 1×–5× (19.11.2026)', () => {
+  const btc = { '2026-01-01': 1, '2026-01-02': 1, '2026-01-03': 1, '2026-01-04': 1 };
+  const px = (m: Record<string, number>) => (s: string) => ({ CASH: 1, ...m } as Record<string, number>)[s];
+  const perp = (p: Partial<PerpData>): PerpData => ({ high: {}, funding: {}, mm: {}, ...p });
+
+  it('the % is the margin: 20% SOL at 3× = a 60% position, cash keeps the margin − position', () => {
+    const p = rebalance({ alloc: { SOL: 20, CASH: 80 }, cash: 1000, units: {}, lev: { SOL: 3 } }, px({ SOL: 100 }));
+    const sol = p.rows.find((r) => r.sym === 'SOL')!;
+    expect(sol.tgtUsd).toBeCloseTo(600); expect(sol.lev).toBe(3); expect(sol.marginPct).toBe(20);
+    expect(p.after.units.SOL).toBeCloseTo(6); expect(p.after.cash).toBeCloseTo(800 + 200 - 600);
+    expect(p.after.lev).toEqual({ SOL: 3 });
+    expect(p.after.cash + p.after.units.SOL * 100).toBeCloseTo(1000);   // value unchanged at entry
+  });
+  it('1× everywhere gives exactly the old result (no lev stored)', () => {
+    const a = rebalance({ alloc: { SOL: 40, OP: -10, CASH: 50 }, cash: 1000, units: {} }, px({ SOL: 100, OP: 2 }));
+    const b = rebalance({ alloc: { SOL: 40, OP: -10, CASH: 50 }, cash: 1000, units: {}, lev: { SOL: 1, OP: 1 } }, px({ SOL: 100, OP: 2 }));
+    expect(b.after).toEqual(a.after); expect(a.after.lev).toBeUndefined();
+    expect(a.after.cash).toBeCloseTo(500 + 200);
+  });
+  it('a 2× short: position = 2 × margin, cash = margin + position', () => {
+    const p = rebalance({ alloc: { OP: -10, CASH: 90 }, cash: 1000, units: {}, lev: { OP: 2 } }, px({ OP: 2 }));
+    expect(p.after.units.OP).toBeCloseTo(-100); expect(p.after.cash).toBeCloseTo(900 + 100 + 200);
+  });
+  it('caps leverage at 5×', () => {
+    const p = rebalance({ alloc: { SOL: 10, CASH: 90 }, cash: 1000, units: {}, lev: { SOL: 9 } }, px({ SOL: 100 }));
+    expect(p.rows.find((r) => r.sym === 'SOL')!.tgtUsd).toBeCloseTo(500);
+  });
+  it('liquidation prices: long entry × (1 − 1/L) / (1 − MM), short entry × (1 + 1/L) / (1 + MM)', () => {
+    expect(liqPrice(100, 0.1, 5, true)).toBeCloseTo(88.889);
+    expect(liqPrice(100, 0.1, 2, false)).toBeCloseTo(136.364);
+    expect(liqPrice(10, 0.1)).toBeCloseTo(18.1818);   // 1× short unchanged
+  });
+  it('equity ↔ internal cash with a leveraged long: the long perp sits inside the equity', () => {
+    const units = { SOL: 6 }, lev = { SOL: 3 }, p = px({ SOL: 100 });
+    expect(internalCash(1000 - 0, units, p, lev)).toBeCloseTo(400);   // equity 1000 (margin 200 + 800 free) → 1000 − 600
+    expect(equityCash(400, units, p, lev)).toBeCloseTo(1000);
+    expect(internalCash(1000, units, p)).toBeCloseTo(1000);            // 1× long = spot coins: not in the equity
+    expect(perpMargin(units, () => 100, undefined, lev)).toBeCloseTo(200);
+  });
+  // SOL 50% at 4× of 1000 at 100 on 01-02 (margin 500, position 2000 = 20 SOL)
+  const sig: Signal = { date: '2026-01-02', createdAt: 1, sdcaNew: false, px: { SOL: 100 }, sdca: { pct: 0, cash: 0, btc: 0 }, rsps: { alloc: { SOL: 50, CASH: 50 }, cash: 1000, units: {}, lev: { SOL: 4 } } };
+  it('a 4× long moves 4× the price and counts as a perp', () => {
+    const book: PriceBook = { BTC: btc, SOL: { '2026-01-01': 100, '2026-01-02': 100, '2026-01-03': 105, '2026-01-04': 105 } };
+    const s = simulate([sig], book, '2026-01-04')!;
+    const d3 = s.rows.find((r) => r.date === '2026-01-03')!;
+    expect(d3.value).toBeCloseTo(1100);            // +5% × 2000
+    expect(d3.perpPnl).toBeCloseTo(100); expect(d3.rPerp).toBeCloseTo(0.2);   // on the 500 margin
+    expect(s.shortEntry.SOL).toBeCloseTo(100); expect(s.rsps.lev).toEqual({ SOL: 4 });
+  });
+  it('liquidates a leveraged long at the day low and loses only its margin', () => {
+    const book: PriceBook = { BTC: btc, SOL: { '2026-01-01': 100, '2026-01-02': 100, '2026-01-03': 90, '2026-01-04': 90 } };
+    // liq = 100 × 0.75 / 0.9 = 83.33
+    const s = simulate([sig], book, '2026-01-04', perp({ low: { SOL: { '2026-01-03': 83 } }, mm: { SOL: 0.1 } }))!;
+    const d3 = s.rows.find((r) => r.date === '2026-01-03')!;
+    expect(d3.liquidations).toHaveLength(1); expect(d3.liquidations[0].long).toBe(true); expect(d3.liquidations[0].loss).toBeCloseTo(500);
+    expect(d3.value).toBeCloseTo(500); expect(s.rsps.units.SOL).toBeUndefined(); expect(s.rsps.lev).toBeUndefined();
+    expect(d3.perpPnl).toBeCloseTo(-500);
+    const pos = costBasis([sig], book, s.events)['RSPS:SOL'];
+    expect(pos.units).toBe(0); expect(pos.realized).toBeCloseTo(-500);
+  });
+  it('no liquidation when the low stays above it; without lows the close is used', () => {
+    const book: PriceBook = { BTC: btc, SOL: { '2026-01-01': 100, '2026-01-02': 100, '2026-01-03': 90, '2026-01-04': 90 } };
+    const s = simulate([sig], book, '2026-01-04', perp({ low: { SOL: { '2026-01-03': 84 } }, mm: { SOL: 0.1 } }))!;
+    expect(s.rsps.units.SOL).toBeCloseTo(20); expect(s.rows.at(-1)!.value).toBeCloseTo(800);
+  });
+  it('a leveraged long pays funding when the rate is positive', () => {
+    const book: PriceBook = { BTC: btc, SOL: { '2026-01-01': 100, '2026-01-02': 100, '2026-01-03': 100, '2026-01-04': 100 } };
+    const s = simulate([sig], book, '2026-01-04', perp({ funding: { SOL: { '2026-01-03': 0.001 } } }))!;
+    expect(s.rows.find((r) => r.date === '2026-01-03')!.fundingUsd).toBeCloseTo(-2);   // 20 SOL × 100 × 0.1%
+  });
+  it('a 1× long stays spot: no perp P/L, no funding, never liquidated', () => {
+    const book: PriceBook = { BTC: btc, SOL: { '2026-01-01': 100, '2026-01-02': 100, '2026-01-03': 10, '2026-01-04': 10 } };
+    const s1: Signal = { ...sig, rsps: { ...sig.rsps, lev: undefined } };
+    const s = simulate([s1], book, '2026-01-04', perp({ funding: { SOL: { '2026-01-03': 0.01 } } }))!;
+    expect(s.rows.every((r) => r.perpPnl === 0 && r.fundingUsd === 0 && !r.liquidations.length)).toBe(true);
+    expect(s.rows.at(-1)!.value).toBeCloseTo(550);
+  });
+  it('keeps the leverage of held perps on a day without a new RSPS signal', () => {
+    const book: PriceBook = { BTC: btc, SOL: { '2026-01-01': 100, '2026-01-02': 100, '2026-01-03': 100, '2026-01-04': 110 } };
+    const dup: Signal = { date: '2026-01-03', createdAt: 2, sdcaNew: false, rspsNew: false, sdca: { pct: 0, cash: 0, btc: 0 }, rsps: { alloc: { SOL: 50, CASH: 50 }, cash: -1000 + 500, units: { SOL: 20 } } };
+    const s = simulate([sig, dup], book, '2026-01-04')!;
+    expect(s.rsps.lev).toEqual({ SOL: 4 }); expect(s.rows.at(-1)!.perpPnl).toBeCloseTo(200);
   });
 });

@@ -13,7 +13,8 @@ import { usePrices } from './lib/usePrices';
 import { usePerp } from './lib/usePerp';
 import { CASH, TOKENS, emojiOf } from './lib/tokens';
 import { addDays, msToReset, todayUtc } from './lib/utc';
-import { pct } from './lib/format';
+import { pct, tone, usd } from './lib/format';
+import { PERF_RANGES, periodPerf, type PerfMode, type PerfRange } from './lib/perf';
 import { Kpis } from './components/Kpis';
 import { LineChart, type Line } from './components/LineChart';
 import { SignalHistory } from './components/SignalHistory';
@@ -81,6 +82,8 @@ export default function App() {
   const [hideValue, setHideValue] = usePersisted<boolean>('privacy.hideValue', false);   // blur the Portfolio value tile   // optional trading fee, % of each trade
   const [flows, setFlows] = usePersisted<Flow[]>('flows', []);
   const [series, setSeries] = usePersisted<'total' | 'sdca' | 'rsps'>('chart.series', 'total');
+  const [perfRange, setPerfRange] = usePersisted<PerfRange>('perf.range', '7d');
+  const [perfMode, setPerfMode] = usePersisted<PerfMode>('perf.mode', 'all');
   const [nwHistory, setNwHistory] = usePersisted<NetWorthSnapshot[]>('networth.history', []);
   const [lastBackup] = usePersisted<number>('backup.last', 0);
   const [backupSnooze, setBackupSnooze] = usePersisted<number>('backup.snooze', 0);
@@ -96,8 +99,12 @@ export default function App() {
   ];
   const { book, errors, loading, liveAt, pricesAt } = usePrices(needed, from);
 
-  // coins that are or were short: Hyperliquid highs (liquidation) and funding
-  const shortSyms = useMemo(() => [...new Set(sorted.flatMap((s) => [...Object.entries(s.rsps.alloc), ...Object.entries(s.rsps.units)].filter(([k, v]) => v < 0 && k !== CASH).map(([k]) => k)))], [sorted]);
+  // coins that are or were perps (shorts, longs above 1×): Hyperliquid highs/lows (liquidation) and funding
+  const shortSyms = useMemo(() => [...new Set([
+    ...sorted.flatMap((s) => [...Object.entries(s.rsps.alloc), ...Object.entries(s.rsps.units)].filter(([k, v]) => v < 0 && k !== CASH).map(([k]) => k)),
+    ...sorted.flatMap((s) => [...Object.keys(s.rsps.lev ?? {}), ...Object.keys(s.rsps.heldLev ?? {})]),
+    ...Object.keys(holdings?.rsps.lev ?? {}), ...Object.entries(holdings?.rsps.units ?? {}).filter(([, v]) => v < 0).map(([k]) => k)
+  ])], [sorted, holdings]);
   const perp = usePerp(shortSyms, from);
   const sim = useMemo(() => simulate(sorted, book, today, perp), [sorted, book, today, perp]);
   const rows = sim?.rows ?? [];
@@ -126,7 +133,9 @@ export default function App() {
     // pre-fill with the carried-forward holdings of each strategy and the last allocation
     const base = holdings ?? (prev && sim ? { sdca: sim.sdca, rsps: sim.rsps } : null);
     const initial: Signal = base
-      ? { date: today, createdAt: 0, sdca: { pct: 0, cash: base.sdca.cash, btc: base.sdca.btc }, rsps: { alloc: prev ? { ...prev.rsps.alloc } : { [CASH]: 100 }, cash: base.rsps.cash, units: { ...base.rsps.units } } }
+      ? { date: today, createdAt: 0, sdca: { pct: 0, cash: base.sdca.cash, btc: base.sdca.btc }, rsps: {
+          alloc: prev ? { ...prev.rsps.alloc } : { [CASH]: 100 }, cash: base.rsps.cash, units: { ...base.rsps.units },
+          ...(prev?.rsps.lev ? { lev: { ...prev.rsps.lev } } : {}), heldLev: { ...(base.rsps.lev ?? {}) } } }
       : emptySignal(today);
     setForm({ date: today, initial, existing: false });
   };
@@ -161,7 +170,7 @@ export default function App() {
     if (!shortSyms.length) return undefined;
     const funding: Record<string, number> = {};
     for (const e of sim?.events ?? []) if (e.kind === 'funding') funding[e.sym] = (funding[e.sym] ?? 0) + e.usd;
-    return { entry: sim?.shortEntry ?? {}, mm: perp.mm, funding };
+    return { entry: sim?.shortEntry ?? {}, mm: perp.mm, funding, lev: (holdings ?? sim)?.rsps.lev ?? {} };
   }, [shortSyms, sim, perp.mm]);
   const applyFlow = (f: Flow) => {
     const base: Holdings = holdings ?? { sdca: sim?.sdca ?? { cash: 0, btc: 0 }, rsps: sim?.rsps ?? { cash: 0, units: {} }, updatedAt: 0 };
@@ -244,6 +253,27 @@ export default function App() {
             </select>
           </div>
         </div>
+        {rows.length > 0 && (() => {
+          const pf = periodPerf(rows, perfRange, perfMode);
+          const hasPerps = rows.some((r) => r.perpPnl !== 0 || r.liquidations.length > 0);
+          return (
+            <div className="perf-bar">
+              <div className="seg" role="group" aria-label="Period">
+                {PERF_RANGES.map(([k, label]) => <button key={k} className={perfRange === k ? 'on' : ''} aria-pressed={perfRange === k} onClick={() => setPerfRange(k)}>{label}</button>)}
+              </div>
+              <select aria-label="Positions" value={perfMode} onChange={(e) => setPerfMode(e.target.value as PerfMode)}>
+                <option value="all">All (SDCA + RSPS)</option>
+                <option value="perps">Perps only</option>
+              </select>
+              {pf && <div className="perf-nums" title={perfRange === '24h' ? 'Today: from the daily close (00:00 UTC) to the live price' : `From the close before ${pf.from} to the live price`}>
+                <div><small>PnL</small><b className={tone(pf.pnl)}>{hideValue ? '••••' : `${pf.pnl >= 0 ? '+' : '−'}${usd(Math.abs(pf.pnl), 2)}`}</b></div>
+                <div><small>%</small><b className={tone(pf.pct)}>{pct(pf.pct, 2)}</b></div>
+              </div>}
+              {perfMode === 'perps' && !hasPerps && <div className="dim small">No perp positions (shorts or longs above 1×) in this history yet.</div>}
+              {perfRange === '24h' && <div className="dim small">24h = today since the daily close (00:00 UTC).</div>}
+            </div>
+          );
+        })()}
         {sim && dates.length > 1
           ? <LineChart dates={dates} lines={lines} markers={markers} zeroLine fmtY={(v) => pct(v, Number.isInteger(Math.round(v * 1e6) / 1e4) ? 0 : 1)} fmtTip={(v) => pct(v, 2)} liveLast />
           : <div className="empty">{loading ? 'Loading prices…' : 'Add your first signal to start tracking performance.'}</div>}
@@ -282,7 +312,7 @@ export default function App() {
         initial={holdings ?? { sdca: sim?.sdca ?? { cash: 0, btc: 0 }, rsps: sim?.rsps ?? { cash: 0, units: {} }, updatedAt: 0 }}
         onSave={(h) => { if (holdings) archive('pp.holdings', 'replaced', 'Portfolio holdings', holdings); setHoldings(h); setHoldingsOpen(false); setFormSyms([]); }} onClose={() => { setHoldingsOpen(false); setFormSyms([]); }} />}
 
-      {form && <SignalForm feePct={feePct} today={today} sameDay={signals.filter((x) => x.date === form.date).length} liveAt={liveAt} date={form.date} initial={form.initial} book={book} editingExisting={form.existing}
+      {form && <SignalForm mm={perp.mm} feePct={feePct} today={today} sameDay={signals.filter((x) => x.date === form.date).length} liveAt={liveAt} date={form.date} initial={form.initial} book={book} editingExisting={form.existing}
         onNeed={setFormSyms} onSave={saveSignal} onClose={() => { setForm(null); setFormSyms([]); }} />}
     </div>
   );

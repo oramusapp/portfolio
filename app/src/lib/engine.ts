@@ -11,6 +11,11 @@
 //   that size, held as negative units; margin and entry value both sit in RSPS cash, so the part's value
 //   (cash + units × price) is unchanged at entry and moves by −size × price change, exactly as a 1× perp.
 //   The % used for shorts counts towards the 100% like a long (|weight|).
+// • LEVERAGE (RSPS only, 19.11.2026): each coin can have 1×–5× (`lev`). The target % is the MARGIN put into the
+//   coin; the position (exposure) is margin × leverage. A long at 1× is spot (as before); a long above 1× and every
+//   short are perpetuals: funding, isolated liquidation (whole margin lost). In the model a perp position adds
+//   margin − units × entry to cash, so cash + units × price = margin + unrealized P/L, exactly like an isolated perp.
+//   Liquidation price: long entry × (1 − 1/L) / (1 − MM) (the day's low), short entry × (1 + 1/L) / (1 + MM) (the day's high).
 // • Funding (Hyperliquid, hourly): each day the short gets −units × close × Σ that day's funding rates (positive rate:
 //   longs pay shorts). It counts as performance and as realized P/L.
 // • Liquidation (1×, isolated): when the day's high reaches 2 × entry / (1 + MM) — MM = maintenance margin = half the
@@ -25,7 +30,9 @@ import { CASH, isAllowed } from './tokens';
 import { addDays, daysBetween } from './utc';
 
 export interface SdcaInput { pct: number; cash: number; btc: number; }   // pct > 0 buy, < 0 sell
-export interface RspsInput { alloc: Record<string, number>; cash: number; units: Record<string, number>; }
+/** lev = leverage per coin for the target allocation (1–5; missing = 1×); heldLev = leverage of the perp positions in
+ *  `units` (what is held before the signal; missing = 1×, a long at 1× is spot). */
+export interface RspsInput { alloc: Record<string, number>; cash: number; units: Record<string, number>; lev?: Record<string, number>; heldLev?: Record<string, number>; }
 /** sdcaNew / rspsNew = false: no new signal for that strategy that day (DUPLICATED) — no trades, holdings carried as they are.
  *  Missing (older signals) means true. */
 export interface Signal {
@@ -39,13 +46,30 @@ export function executeSignal(sig: Signal, px: (sym: string) => number) {
   const fee = sig.fee ?? 0;
   const order = sdcaOrder(sig.sdcaNew === false ? { ...sig.sdca, pct: 0 } : sig.sdca, px('BTC'), fee);
   const plan = sig.rspsNew === false ? null : rebalance(sig.rsps, px, fee);
-  const rsps: RspsState = plan ? plan.after : { cash: sig.rsps.cash, units: { ...sig.rsps.units } };
+  const rsps: RspsState = plan ? plan.after : { cash: sig.rsps.cash, units: { ...sig.rsps.units }, ...levFor(sig.rsps.units, sig.rsps.heldLev) };
   return { order, plan, sdca: order.after, rsps };
 }
 export interface SdcaState { cash: number; btc: number; }
-export interface RspsState { cash: number; units: Record<string, number>; }
+/** lev = leverage of the open perp positions above 1× (missing = 1×). */
+export interface RspsState { cash: number; units: Record<string, number>; lev?: Record<string, number>; }
 
 const EPS = 1e-9;
+
+// ---------- leverage ----------
+export const MAX_LEV = 5;
+/** Leverage of a coin (1–5, whole or fractional), 1× when missing or invalid. */
+export const levOf = (lev: Record<string, number> | undefined, sym: string) => {
+  const v = lev?.[sym];
+  return typeof v === 'number' && Number.isFinite(v) && v > 1 ? Math.min(v, MAX_LEV) : 1;
+};
+/** A position is a perpetual when it is short (any leverage) or long above 1×; a long at 1× is spot. */
+export const isPerp = (units: number, lev: number) => units < -EPS || (units > EPS && lev > 1 + EPS);
+/** { lev } with only the held coins above 1×, or {} when there are none (keeps old saved data unchanged). */
+const levFor = (units: Record<string, number>, lev?: Record<string, number>): { lev?: Record<string, number> } => {
+  const out: Record<string, number> = {};
+  for (const s of Object.keys(units)) { const L = levOf(lev, s); if (L > 1 && Math.abs(units[s]) > EPS) out[s] = L; }
+  return Object.keys(out).length ? { lev: out } : {};
+};
 
 // ---------- SDCA ----------
 export interface SdcaOrder {
@@ -99,28 +123,46 @@ export function fillCash(alloc: Record<string, number>): { alloc: Record<string,
 export interface RebalanceRow {
   sym: string; price: number; curUnits: number; curUsd: number; curPct: number;
   tgtPct: number; tgtUsd: number; deltaUsd: number; deltaPct: number; deltaUnits: number;
+  lev: number; marginPct: number;   // target leverage and the % of the part put in as margin (= the signal's %)
 }
-export interface RebalancePlan { total: number; rows: RebalanceRow[]; after: RspsState; missing: string[]; fee: number; }
+export interface RebalancePlan { total: number; rows: RebalanceRow[]; after: RspsState; missing: string[]; fee: number; heldLev?: Record<string, number>; }
 
 /** Current value of the open shorts: Σ |units| × price (NaN if a price is missing). */
 export function shortNotional(units: Record<string, number>, px: (sym: string) => number): number {
   return Object.entries(units).reduce((t, [s, u]) => (u < 0 ? t + -u * px(s) : t), 0);
 }
+/** − Σ units × price over the perp positions (shorts, and longs above 1×): what the exchange equity does not hold
+ *  as coins. Long-only at 1×: 0. */
+export function perpNotional(units: Record<string, number>, px: (sym: string) => number, lev?: Record<string, number>): number {
+  return Object.entries(units).reduce((t, [s, u]) => (isPerp(u, levOf(lev, s)) ? t - u * px(s) : t), 0);
+}
 /** RSPS cash as the exchange shows it ("USDT equity" on Bybit: balance incl. the shorts' margin and unrealized P/L).
  *  Inside the app the cash also holds the entry value of the coins sold short (see the model above), so
  *  equity = internal cash − Σ |units| × price and internal cash = equity + Σ |units| × price. Long-only: the same number. */
-export const equityCash = (cash: number, units: Record<string, number>, px: (sym: string) => number) => cash - shortNotional(units, px);
-export const internalCash = (equity: number, units: Record<string, number>, px: (sym: string) => number) => equity + shortNotional(units, px);
+export const equityCash = (cash: number, units: Record<string, number>, px: (sym: string) => number, lev?: Record<string, number>) => cash - perpNotional(units, px, lev);
+export const internalCash = (equity: number, units: Record<string, number>, px: (sym: string) => number, lev?: Record<string, number>) => equity + perpNotional(units, px, lev);
 
 /** Cash frozen by open 1× shorts: the margin plus the entry value of the coins sold = 2 × |units| × entry price.
  *  It stays in RSPS cash for the valuation (cash + Σ units × price), but it is not free: it cannot be spent or
  *  withdrawn while the short is open. A short without a known entry price is counted at `fallback` (e.g. today's price). */
-export function frozenCash(units: Record<string, number>, entry: (sym: string) => number, fallback?: (sym: string) => number): number {
+export function frozenCash(units: Record<string, number>, entry: (sym: string) => number, fallback?: (sym: string) => number, lev?: Record<string, number>): number {
   return Object.entries(units).reduce((t, [s, u]) => {
-    if (!(u < 0)) return t;
+    const L = levOf(lev, s);
+    if (!isPerp(u, L)) return t;
     let e = entry(s);
     if (!(Number.isFinite(e) && e > 0) && fallback) e = fallback(s);
-    return Number.isFinite(e) && e > 0 ? t + 2 * -u * e : t;
+    // margin − units × entry: short 1× = 2 × size; a leveraged long is negative (cash borrowed for the position)
+    return Number.isFinite(e) && e > 0 ? t + Math.abs(u) * e / L - u * e : t;
+  }, 0);
+}
+/** Margin of the perp positions: Σ |units| × entry / leverage. */
+export function perpMargin(units: Record<string, number>, entry: (sym: string) => number, fallback?: (sym: string) => number, lev?: Record<string, number>): number {
+  return Object.entries(units).reduce((t, [s, u]) => {
+    const L = levOf(lev, s);
+    if (!isPerp(u, L)) return t;
+    let e = entry(s);
+    if (!(Number.isFinite(e) && e > 0) && fallback) e = fallback(s);
+    return Number.isFinite(e) && e > 0 ? t + Math.abs(u) * e / L : t;
   }, 0);
 }
 
@@ -132,22 +174,25 @@ export function rebalance(inp: RspsInput, px: (sym: string) => number, fee = 0):
   const missing = syms.filter((s) => !Number.isFinite(px(s)));
   const cur = (s: string) => (s === CASH ? inp.cash : inp.units[s] ?? 0);
   const total = syms.reduce((t, s) => t + (missing.includes(s) ? 0 : cur(s) * px(s)), 0);
-  const shortUsd = Object.entries(inp.alloc).reduce((t, [s, v]) => t + (s !== CASH && v < 0 ? -total * v / 100 : 0), 0);
-  const cashTgt = total * (inp.alloc[CASH] ?? 0) / 100 + 2 * shortUsd;
+  // each coin: margin = total × |%|, position = ± margin × leverage; cash gets margin − position (0 for a 1× long)
+  const pos = (s: string) => { const v = inp.alloc[s] ?? 0; return Math.sign(v) * total * Math.abs(v) / 100 * levOf(inp.lev, s); };
+  const cashTgt = total * (inp.alloc[CASH] ?? 0) / 100 +
+    Object.entries(inp.alloc).reduce((t, [s, v]) => t + (s !== CASH && v !== 0 ? total * Math.abs(v) / 100 - pos(s) : 0), 0);
   const rows: RebalanceRow[] = syms.map((sym) => {
     const price = px(sym), curUnits = cur(sym), curUsd = curUnits * price;
-    const tgtUsd = sym === CASH ? cashTgt : total * (inp.alloc[sym] ?? 0) / 100;
+    const tgtUsd = sym === CASH ? cashTgt : pos(sym);
     const tgtPct = total > 0 ? tgtUsd / total * 100 : inp.alloc[sym] ?? 0, deltaUsd = tgtUsd - curUsd;
     return {
       sym, price, curUnits, curUsd, curPct: total > 0 ? curUsd / total * 100 : 0, tgtPct, tgtUsd,
-      deltaUsd, deltaPct: total > 0 ? deltaUsd / total * 100 : 0, deltaUnits: deltaUsd / price
+      deltaUsd, deltaPct: total > 0 ? deltaUsd / total * 100 : 0, deltaUnits: deltaUsd / price,
+      lev: sym === CASH ? 1 : levOf(inp.lev, sym), marginPct: sym === CASH ? inp.alloc[CASH] ?? 0 : Math.abs(inp.alloc[sym] ?? 0)
     };
   });
   const feeUsd = fee * rows.filter((r) => r.sym !== CASH).reduce((t, r) => t + Math.abs(r.deltaUsd), 0);
   const k = total > 0 && Number.isFinite(feeUsd) ? (total - feeUsd) / total : 1;
   const units: Record<string, number> = {};
   for (const r of rows) if (r.sym !== CASH && Math.abs(r.tgtUsd) > EPS) units[r.sym] = r.tgtUsd * k / r.price;
-  return { total, rows, after: { cash: cashTgt * k, units }, missing, fee: Number.isFinite(feeUsd) ? feeUsd : 0 };
+  return { total, rows, after: { cash: cashTgt * k, units, ...levFor(units, inp.lev) }, missing, fee: Number.isFinite(feeUsd) ? feeUsd : 0, ...(inp.heldLev ? { heldLev: inp.heldLev } : {}) };
 }
 
 // ---------- valuation / simulation ----------
@@ -168,21 +213,28 @@ export interface DayRow {
   r: number; rSdca: number; rRsps: number; btcDay: number;
   totalGain: number; sdcaGain: number; rspsGain: number;
   invested: number; missing: string[];
-  fundingUsd: number;                                          // funding of the shorts that day (+ received, − paid)
-  liquidations: Liquidation[];                                 // shorts liquidated that day
+  fundingUsd: number;                                          // funding of the perps that day (+ received, − paid)
+  liquidations: Liquidation[];                                 // perps liquidated that day
+  perpPnl: number;                                             // P/L of the perp positions that day (price + funding + liquidations), USD
+  rPerp: number; perpGain: number;                             // perp P/L / perp equity (day) and compounded since the start
 }
-export interface Liquidation { date: string; sym: string; units: number; entry: number; price: number; loss: number; }
+/** lev / long are set for the leveraged perps (since 19.11.2026); older rows are 1× shorts. */
+export interface Liquidation { date: string; sym: string; units: number; entry: number; price: number; loss: number; lev?: number; long?: boolean; }
 export interface PerpEvent { date: string; sym: string; kind: 'funding' | 'liq'; usd: number; units?: number; }
 export interface Simulation {
   start: string; rows: DayRow[]; sdca: SdcaState; rsps: RspsState;
   events: PerpEvent[];                                         // funding per day and coin + liquidations (for cost basis)
-  shortEntry: Record<string, number>;                          // average entry price of the open shorts
+  shortEntry: Record<string, number>;                          // average entry price of the open perps (shorts and leveraged longs)
 }
-/** Perp data for the shorts (Hyperliquid): daily highs, funding (sum of the hourly rates per UTC day) and maintenance margin. */
-export interface PerpData { high: PriceBook; funding: Record<string, Record<string, number>>; mm: Record<string, number>; }
+/** Perp data (Hyperliquid): daily highs and lows, funding (sum of the hourly rates per UTC day) and maintenance margin.
+ *  low is optional: without it a leveraged long is checked against the day's close. */
+export interface PerpData { high: PriceBook; low?: PriceBook; funding: Record<string, Record<string, number>>; mm: Record<string, number>; }
 export const DEFAULT_MM = 0.1;   // when the coin's max leverage is unknown: 5× → 20% initial, 10% maintenance
-/** Price at which a 1× isolated short with this entry is liquidated. */
-export const liqPrice = (entry: number, mm = DEFAULT_MM) => (2 * entry) / (1 + mm);
+/** Price at which an isolated perp with this entry is liquidated: short (default) or long, at `lev`×. */
+export const liqPrice = (entry: number, mm = DEFAULT_MM, lev = 1, long = false) =>
+  long ? (entry * (1 - 1 / lev)) / (1 - mm) : (entry * (1 + 1 / lev)) / (1 + mm);
+/** Highest leverage the exchange allows for a coin, from its maintenance margin (MM = 1 / (2 × max)). */
+export const maxLevFromMm = (mm: number | undefined) => (mm && mm > 0 ? Math.round(1 / (2 * mm)) : NaN);
 
 const ret = (v1: number, v0: number) => (v0 > EPS && Number.isFinite(v1 / v0) ? v1 / v0 - 1 : 0);
 
@@ -194,18 +246,29 @@ export function simulate(signals: Signal[], book: PriceBook, today: string, perp
   for (const s of sorted) byDate.set(s.date, [...(byDate.get(s.date) ?? []), s]);
   const start = addDays(sorted[0].date, -1);
   let sd: SdcaState = { cash: 0, btc: 0 }, rs: RspsState = { cash: 0, units: {} };
-  const entry: Record<string, number> = {};   // average entry of each open short
+  const entry: Record<string, number> = {};   // average entry of each open perp
   const events: PerpEvent[] = [];
-  /** After an execution: keep the average entry of the shorts (new short = execution price, bigger short = weighted). */
-  const trackEntry = (before: Record<string, number>, after: Record<string, number>, pe: (s: string) => number) => {
-    for (const sym of new Set([...Object.keys(before), ...Object.keys(after), ...Object.keys(entry)])) {
-      const u0 = Math.min(before[sym] ?? 0, 0), u1 = after[sym] ?? 0;
-      if (!(u1 < -EPS)) { delete entry[sym]; continue; }
-      const e0 = entry[sym] ?? pe(sym);
-      entry[sym] = -u1 > -u0 + EPS ? (e0 * -u0 + pe(sym) * (-u1 + u0)) / -u1 : e0;
+  /** After an execution: keep the average entry of the perps (new = execution price, bigger on the same side = weighted). */
+  const trackEntry = (before: Record<string, number>, after: RspsState, pe: (s: string) => number) => {
+    for (const sym of new Set([...Object.keys(before), ...Object.keys(after.units), ...Object.keys(entry)])) {
+      const u0 = before[sym] ?? 0, u1 = after.units[sym] ?? 0;
+      if (!isPerp(u1, levOf(after.lev, sym))) { delete entry[sym]; continue; }
+      const same = Math.sign(u0) === Math.sign(u1), a0 = same ? Math.abs(u0) : 0, a1 = Math.abs(u1);
+      const e0 = same && entry[sym] !== undefined ? entry[sym] : pe(sym);
+      entry[sym] = a1 > a0 + EPS ? (e0 * a0 + pe(sym) * (a1 - a0)) / a1 : e0;
     }
   };
-  let active = sorted[0], idx = 1, iSd = 1, iRs = 1, invested = 0, started = false;
+  /** The perps' own money: Σ margin + unrealized P/L at prices `px`. */
+  const perpEquity = (st: RspsState, px: (s: string) => number) => Object.entries(st.units).reduce((t, [s, u]) => {
+    const L = levOf(st.lev, s), e = entry[s] ?? px(s), v = Math.abs(u) * e / L + u * (px(s) - e);
+    return isPerp(u, L) && Number.isFinite(v) ? t + v : t;
+  }, 0);
+  /** P/L of the perps when prices move from `a` to `b`. */
+  const perpMove = (st: RspsState, a: (s: string) => number, b: (s: string) => number) => Object.entries(st.units).reduce((t, [s, u]) => {
+    const v = u * (b(s) - a(s));
+    return isPerp(u, levOf(st.lev, s)) && Number.isFinite(v) ? t + v : t;
+  }, 0);
+  let active = sorted[0], idx = 1, iSd = 1, iRs = 1, iPerp = 1, invested = 0, started = false, prevLev: Record<string, number> | undefined;
   const rows: DayRow[] = [];
   for (const d of daysBetween(sorted[0].date, today < sorted[0].date ? sorted[0].date : today)) {
     const prev = addDays(d, -1);
@@ -213,37 +276,46 @@ export function simulate(signals: Signal[], book: PriceBook, today: string, perp
     const sigs = byDate.get(d) ?? [];
     const execs: Exec[] = [];
     // growth factors of the day, chained: close D-1 → 1st signal → 2nd signal → … → close D (holdings held in between)
-    let gSd = 1, gRs = 1, gAll = 1, from = p0;
+    let gSd = 1, gRs = 1, gAll = 1, from = p0, perpPnl = 0, perpBase = started ? perpEquity(rs, p0) : 0;
     for (const sig of sigs) {
       active = sig;
       const pe = (s: string) => sig.px?.[s] ?? p0(s);
       if (started) {
         const a = sdcaValue(sd, from('BTC')), b = sdcaValue(sd, pe('BTC')), c = rspsValue(rs, from), e = rspsValue(rs, pe);
         gSd *= 1 + ret(b, a); gRs *= 1 + ret(e, c); gAll *= 1 + ret(b + e, a + c);
+        perpPnl += perpMove(rs, from, pe);
       }
       // what you typed in vs what was carried forward = a deposit (+) or withdrawal (−)
       const typed = sdcaValue(sig.sdca, pe('BTC')) + rspsValue({ cash: sig.rsps.cash, units: sig.rsps.units }, pe);
       const carried = started ? sdcaValue(sd, pe('BTC')) + rspsValue(rs, pe) : 0;
       if (Number.isFinite(typed - carried)) invested += typed - carried;
-      const ex = executeSignal(sig, pe);
+      // a signal saved before leverage existed has no heldLev: the held perps keep the leverage carried so far
+      const sigX = sig.rsps.heldLev === undefined && prevLev ? { ...sig, rsps: { ...sig.rsps, heldLev: prevLev } } : sig;
+      const ex = executeSignal(sigX, pe);
       execs.push({ signal: sig, sdca: ex.order, rsps: ex.plan });
-      trackEntry(sig.rsps.units, ex.rsps.units, pe);
-      sd = ex.sdca; rs = ex.rsps; from = pe; started = true;
+      trackEntry(sig.rsps.units, ex.rsps, pe);
+      sd = ex.sdca; rs = ex.rsps; from = pe; started = true; prevLev = rs.lev;
+      perpBase = Math.max(perpBase, perpEquity(rs, pe));
     }
-    // shorts during the day: liquidation (day's high), then funding on what is still open
+    // perps during the day: liquidation (short: day's high, long: day's low), then funding on what is still open
     let fundingUsd = 0;
     const liquidations: Liquidation[] = [];
     if (started) {
       for (const [sym, u] of Object.entries(rs.units)) {
-        if (!(u < -EPS)) continue;
+        const L = levOf(rs.lev, sym), long = u > 0;
+        if (!isPerp(u, L)) continue;
         const e = entry[sym] ?? from(sym);
         if (!Number.isFinite(e)) continue;
-        const hi = perp?.high[sym]?.[d] ?? p1(sym), lp = liqPrice(e, perp?.mm[sym]);
-        if (Number.isFinite(hi) && hi >= lp) {
-          const loss = 2 * e * -u;   // the cash held for this short (margin + entry value) is used up
-          rs = { cash: rs.cash - loss, units: Object.fromEntries(Object.entries(rs.units).filter(([k]) => k !== sym)) };
-          liquidations.push({ date: d, sym, units: u, entry: e, price: lp, loss: e * -u });
-          events.push({ date: d, sym, kind: 'liq', usd: loss, units: -u });
+        const lp = liqPrice(e, perp?.mm[sym], L, long);
+        const ext = long ? perp?.low?.[sym]?.[d] ?? p1(sym) : perp?.high[sym]?.[d] ?? p1(sym);
+        if (Number.isFinite(ext) && (long ? ext <= lp : ext >= lp)) {
+          // the cash this position holds (margin − units × entry) goes; the whole margin is lost
+          const held = Math.abs(u) * e / L - u * e;
+          perpPnl += -(Math.abs(u) * e / L + u * (from(sym) - e));
+          const levNext = { ...(rs.lev ?? {}) }; delete levNext[sym];
+          rs = { cash: rs.cash - held, units: Object.fromEntries(Object.entries(rs.units).filter(([k]) => k !== sym)), ...levFor(rs.units, levNext) };
+          liquidations.push({ date: d, sym, units: u, entry: e, price: lp, loss: Math.abs(u) * e / L, ...(L > 1 ? { lev: L } : {}), ...(long ? { long: true } : {}) });
+          events.push({ date: d, sym, kind: 'liq', usd: Math.abs(held), units: -u });
           delete entry[sym];
           continue;
         }
@@ -255,7 +327,10 @@ export function simulate(signals: Signal[], book: PriceBook, today: string, perp
           events.push({ date: d, sym, kind: 'funding', usd: f });
         }
       }
+      perpPnl += fundingUsd + perpMove(rs, from, p1);
     }
+    const rPerp = perpBase > EPS && Number.isFinite(perpPnl / perpBase) ? Math.max(perpPnl / perpBase, -1) : 0;
+    iPerp *= 1 + rPerp;
     const lastEx = execs.at(-1);
     const s0 = sdcaValue(sd, from('BTC')), s1 = sdcaValue(sd, p1('BTC'));
     const r0 = rspsValue(rs, from), r1 = rspsValue(rs, p1);
@@ -268,7 +343,7 @@ export function simulate(signals: Signal[], book: PriceBook, today: string, perp
       r, rSdca, rRsps, btcDay: ret(p1('BTC'), p0('BTC')),
       totalGain: idx - 1, sdcaGain: iSd - 1, rspsGain: iRs - 1, invested,
       missing: held.filter((s) => !Number.isFinite(p0(s)) || !Number.isFinite(p1(s))),
-      fundingUsd, liquidations
+      fundingUsd, liquidations, perpPnl, rPerp, perpGain: iPerp - 1
     });
   }
   return { start, rows, sdca: sd, rsps: rs, events, shortEntry: { ...entry } };

@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PerpData } from './engine';
-import { fetchFunding, fetchHighs, fetchMaintenance } from './prices';
+import { fetchFunding, fetchHighLow, fetchMaintenance } from './prices';
 
 const REFRESH_MS = 10 * 60_000;   // funding is paid hourly; highs of the open day change
 
-/** Hyperliquid perp data for the coins that are or were short: daily highs, funding per day, maintenance margin. */
+/** Hyperliquid perp data for the coins that are or were perps (shorts, leveraged longs): daily highs and lows, funding per day, maintenance margin. */
 export function usePerp(syms: string[], from: string): PerpData {
-  const [data, setData] = useState<PerpData>({ high: {}, funding: {}, mm: {} });
+  const [data, setData] = useState<PerpData>({ high: {}, low: {}, funding: {}, mm: {} });
   const key = [...new Set(syms)].sort().join(',');
   const mmLoaded = useRef(false);
   useEffect(() => {
@@ -18,9 +18,9 @@ export function usePerp(syms: string[], from: string): PerpData {
       }
       for (const sym of key.split(',')) {
         try {
-          const [high, funding] = await Promise.all([fetchHighs(sym, from), fetchFunding(sym, from)]);
+          const [hl, funding] = await Promise.all([fetchHighLow(sym, from), fetchFunding(sym, from)]);
           if (!alive) return;
-          setData((d) => ({ ...d, high: { ...d.high, [sym]: high }, funding: { ...d.funding, [sym]: funding } }));
+          setData((d) => ({ ...d, high: { ...d.high, [sym]: hl.high }, low: { ...(d.low ?? {}), [sym]: hl.low }, funding: { ...d.funding, [sym]: funding } }));
         } catch { /* keep what we have; closes are used as highs, no funding */ }
       }
     };

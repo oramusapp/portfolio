@@ -74,14 +74,20 @@ const hl = async <T,>(body: unknown): Promise<T> => {
   return res.json() as Promise<T>;
 };
 
-/** Daily highs (USD per 1 token) from `fromDay`. */
-export async function fetchHighs(sym: string, fromDay: string): Promise<Series> {
-  const tk = tokenBySym.get(sym); if (!tk) return {};
-  const rows = await hl<{ t: number; h: string }[]>({ type: 'candleSnapshot', req: { coin: tk.hl, interval: '1d', startTime: msOf(fromDay), endTime: Date.now() + 86_400_000 } });
-  const out: Series = {};
-  for (const r of Array.isArray(rows) ? rows : []) out[dayOf(r.t)] = Number(r.h) / tk.scale;
-  return out;
+/** Daily highs and lows (USD per 1 token) from `fromDay`; a day without a low (e.g. the dashboard's sheet) is left out of `low`. */
+export async function fetchHighLow(sym: string, fromDay: string): Promise<{ high: Series; low: Series }> {
+  const tk = tokenBySym.get(sym); if (!tk) return { high: {}, low: {} };
+  const rows = await hl<{ t: number; h: string; l?: string }[]>({ type: 'candleSnapshot', req: { coin: tk.hl, interval: '1d', startTime: msOf(fromDay), endTime: Date.now() + 86_400_000 } });
+  const high: Series = {}, low: Series = {};
+  for (const r of Array.isArray(rows) ? rows : []) {
+    high[dayOf(r.t)] = Number(r.h) / tk.scale;
+    const l = Number(r.l);
+    if (r.l !== undefined && Number.isFinite(l) && l > 0) low[dayOf(r.t)] = l / tk.scale;
+  }
+  return { high, low };
 }
+/** Daily highs (USD per 1 token) from `fromDay`. */
+export async function fetchHighs(sym: string, fromDay: string): Promise<Series> { return (await fetchHighLow(sym, fromDay)).high; }
 
 /** Hourly funding rates summed per UTC day (the payment at hh:00 belongs to the hour before it). Positive = longs pay shorts. */
 export async function fetchFunding(sym: string, fromDay: string): Promise<Record<string, number>> {

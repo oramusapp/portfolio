@@ -366,3 +366,23 @@ table.mini td.wrap { white-space: normal; }
 
 /* no live prices: last prices of this device are used */
 .offline-note { margin: 10px 0; padding: 10px 12px; border: 1px solid var(--warn); border-radius: 10px; font-size: 14px; line-height: 1.45; }
+
+/* leverage (19.11.2026) */
+.pair select.lev { flex: 0 0 auto; width: 58px; min-width: 0; padding: 6px 4px; font-size: 12px; font-weight: 700; }
+.pair select.lev.on { color: var(--amber); border-color: var(--amber); }
+.tag.lev { margin-left: 6px; font-size: 10px; font-weight: 700; letter-spacing: .4px; padding: 1px 6px; border-radius: 5px; color: var(--amber); border: 1px solid var(--amber); }
+.pair:has(select.lev) select:not(.lev) { width: auto; flex: 1 1 96px; min-width: 86px; }
+.pair:has(select.lev) .unit { min-width: 0; width: auto; padding: 0 2px; }
+.pair:has(select.lev) input { flex: 0 1 44px; min-width: 38px; }
+.pair:has(select.lev) .ls { min-width: 44px; padding: 6px 3px; font-size: 10px; }
+.pair select.lev { width: 46px; padding: 6px 2px; }
+
+/* performance by period (19.11.2026) */
+.perf-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: 4px 0 12px; }
+.perf-bar .seg button { min-width: 44px; }
+.perf-bar select { width: auto; }
+.perf-nums { display: flex; gap: 18px; align-items: baseline; margin-left: auto; }
+.perf-nums div { display: flex; flex-direction: column; align-items: flex-end; }
+.perf-nums small { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .5px; }
+.perf-nums b { font-size: 18px; font-variant-numeric: tabular-nums; }
+@media (max-width: 560px) { .perf-nums { margin-left: 0; width: 100%; justify-content: space-between; } .perf-nums div { align-items: flex-start; } }

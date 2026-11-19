@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { priceOn, type PriceBook } from '../lib/prices';
 import { CASH, TOKENS, emojiOf } from '../lib/tokens';
-import { equityCash, frozenCash, internalCash, type SdcaState, type RspsState } from '../lib/engine';
+import { equityCash, frozenCash, internalCash, isPerp, levOf, perpMargin, type SdcaState, type RspsState } from '../lib/engine';
 import { num, price, usd } from '../lib/format';
-import { PairRows, toPairs, n, signed, type Pair } from './SignalForm';
+import { PairRows, levRec, toPairs, n, signed, type Pair } from './SignalForm';
 import { IcClose } from './icons';
 
 export interface Holdings { sdca: SdcaState; rsps: RspsState; updatedAt: number; }
@@ -24,12 +24,12 @@ export function HoldingsPanel({ initial, book, today, onNeed, onSave, onClose, f
   const [flowAmt, setFlowAmt] = useState('');
   const [btc, setBtc] = useState(String(+initial.sdca.btc.toFixed(8)));
   const [sdcaCash, setSdcaCash] = useState(String(+initial.sdca.cash.toFixed(2)));
-  const [units, setUnits] = useState<Pair[]>(toPairs(initial.rsps.units));
+  const [units, setUnits] = useState<Pair[]>(toPairs(initial.rsps.units, initial.rsps.lev));
   // RSPS cash is typed as the exchange shows it (USDT equity); null = not edited → derived from the saved holdings
   const [rspsCashEq, setRspsCashEq] = useState<string | null>(null);
 
   const px = (s: string) => priceOn(book, s, today);
-  const initEq = equityCash(initial.rsps.cash, initial.rsps.units, px);
+  const initEq = equityCash(initial.rsps.cash, initial.rsps.units, px, initial.rsps.lev);
   const rspsCash = rspsCashEq ?? (Number.isFinite(initEq) ? String(+initEq.toFixed(2)) : '');
   const setRspsCash = (v: string) => setRspsCashEq(v);
   useEffect(() => { onNeed(units.map((u) => u.sym)); }, [units.map((u) => u.sym).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -37,20 +37,21 @@ export function HoldingsPanel({ initial, book, today, onNeed, onSave, onClose, f
   const btcValue = n(btc) * px('BTC');
   const sdcaTotal = btcValue + n(sdcaCash);
   const tokenValue = (u: Pair) => signed(u) * px(u.sym);   // a short counts as negative
-  // equity already contains the shorts (margin + unrealized P/L) → only the longs are added
-  const rspsTotal = units.reduce((t, u) => t + (n(u.v) > 0 && !u.short ? tokenValue(u) : 0), n(rspsCash));
+  // equity already contains the perps (margin + unrealized P/L) → only the spot longs (1×) are added
+  const lev = levRec(units);
+  const rspsTotal = units.reduce((t, u) => t + (n(u.v) > 0 && !isPerp(signed(u), levOf(lev, u.sym)) ? tokenValue(u) : 0), n(rspsCash));
   const unitsSigned = Object.fromEntries(units.filter((u) => n(u.v) > 0).map((u) => [u.sym, signed(u)]));
   const bad = [btc, sdcaCash, rspsCash, ...units.map((u) => u.v)].some((v) => !(n(v) >= 0));
   // cash frozen by the open shorts (margin + entry value) — not free to withdraw
   const entryPx = (s: string) => entry?.[s] ?? NaN;
-  const frozen = frozenCash(Object.fromEntries(units.filter((u) => u.short && n(u.v) > 0).map((u) => [u.sym, signed(u)])), entryPx, px);
-  const frozenNow = frozenCash(initial.rsps.units, entryPx, px);
+  const margin = perpMargin(unitsSigned, entryPx, px, lev);
+  const frozenNow = frozenCash(initial.rsps.units, entryPx, px, initial.rsps.lev);
 
   const save = () => {
     if (bad) return;
     onSave({
       sdca: { btc: n(btc), cash: n(sdcaCash) },
-      rsps: { cash: internalCash(n(rspsCash), unitsSigned, px), units: unitsSigned },
+      rsps: { cash: internalCash(n(rspsCash), unitsSigned, px, lev), units: unitsSigned, ...(lev ? { lev } : {}) },
       updatedAt: Date.now()
     });
   };
@@ -75,12 +76,12 @@ export function HoldingsPanel({ initial, book, today, onNeed, onSave, onClose, f
           <div className="card pane">
             <h3>RSPS <span className="right">{usd(rspsTotal, 2)}</span></h3>
             <div className="dim small">Tokens and amounts:</div>
-            <PairRows rows={units} setRows={setUnits} options={TOKENS.map((t) => t.sym)} unit="units" placeholder="0" sides
+            <PairRows rows={units} setRows={setUnits} options={TOKENS.map((t) => t.sym)} unit="units" placeholder="0" sides levs
               extra={(u) => <span className="val">{usd(tokenValue(u), 2)}</span>} />
             <label>{emojiOf(CASH)} Cash — USDT equity on the exchange<div className="field"><input inputMode="decimal" value={rspsCash} onChange={(e) => setRspsCash(e.target.value)} /><span className="unit">USD</span></div></label>
-            <div className="dim small">Type what the exchange shows (Bybit: USDT equity = balance with the shorts' margin and unrealized P/L). The shorts are already in it, so only longs are added.</div>
-            {frozen > 0 && <div className={n(rspsCash) < frozen / 2 - 0.005 ? 'warn small' : 'dim small'}>🔒 {usd(frozen / 2, 2)} of it is the margin of the shorts (1×) · free ≈ <b>{usd(n(rspsCash) - frozen / 2, 2)}</b></div>}
-            {units.length > 0 && <div className="dim small">{units.map((u) => `${u.sym} ${u.short ? 'short ' : ''}${num(n(u.v), 6)} @ ${price(px(u.sym))}`).join(' · ')}</div>}
+            <div className="dim small">Type what the exchange shows (Bybit: USDT equity = balance with the perps' margin and unrealized P/L). The perps (shorts, longs above 1×) are already in it, so only spot longs (1×) are added.</div>
+            {margin > 0 && <div className={n(rspsCash) < margin - 0.005 ? 'warn small' : 'dim small'}>🔒 {usd(margin, 2)} of it is the margin of the perps · free ≈ <b>{usd(n(rspsCash) - margin, 2)}</b></div>}
+            {units.length > 0 && <div className="dim small">{units.map((u) => `${u.sym} ${u.short ? 'short ' : ''}${num(n(u.v), 6)}${(u.lev ?? 1) > 1 ? ` ${u.lev}×` : ''} @ ${price(px(u.sym))}`).join(' · ')}</div>}
           </div>
         </div>
 
@@ -95,7 +96,7 @@ export function HoldingsPanel({ initial, book, today, onNeed, onSave, onClose, f
           {flowOpen && (() => {
             const amt = n(flowAmt), cashNow = flowStrat === 'sdca' ? initial.sdca.cash : Math.max(0, initial.rsps.cash - frozenNow);
             const err = !(amt > 0) ? 'Enter an amount.' : flowSide === 'out' && amt > cashNow + 1e-9
-              ? `Only ${usd(cashNow, 2)} free cash in ${flowStrat.toUpperCase()}${flowStrat === 'rsps' && frozenNow > 0 ? ` (${usd(frozenNow, 2)} is frozen by the shorts)` : ''}.` : null;
+              ? `Only ${usd(cashNow, 2)} free cash in ${flowStrat.toUpperCase()}${flowStrat === 'rsps' && frozenNow > 0 ? ` (${usd(frozenNow, 2)} is held by the perps)` : ''}.` : null;
             return (
               <div className="flow-form">
                 <div className="seg"><button className={flowStrat === 'sdca' ? 'on' : ''} onClick={() => setFlowStrat('sdca')}>SDCA</button><button className={flowStrat === 'rsps' ? 'on' : ''} onClick={() => setFlowStrat('rsps')}>RSPS</button></div>

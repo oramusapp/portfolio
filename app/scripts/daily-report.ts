@@ -12,7 +12,7 @@ import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { createRequire } from 'node:module';
 import { benchmark, bySignalOrder, simulate, type PerpData, type Signal } from '../src/lib/engine';
-import { fetchDaily, fetchFunding, fetchHighs, fetchLive, fetchMaintenance, priceOn, type PriceBook } from '../src/lib/prices';
+import { fetchDaily, fetchFunding, fetchHighLow, fetchLive, fetchMaintenance, priceOn, type PriceBook } from '../src/lib/prices';
 import { CASH } from '../src/lib/tokens';
 import { addDays, todayUtc } from '../src/lib/utc';
 import { dashboardStats } from '../src/lib/dashboardStats';
@@ -71,12 +71,15 @@ export async function dailyReport(saved: Record<string, string>, nowMs = Date.no
   for (const sym of syms) { try { book[sym] = await fetchDaily(sym, from); } catch { book[sym] = {}; } }
   try { const live = await fetchLive(); for (const [sym, v] of Object.entries(live)) if (book[sym]) book[sym][today] = v; } catch { /* closes only */ }
 
-  // perp data for coins that are or were short
-  const shortSyms = [...new Set(sorted.flatMap((s) => [...Object.entries(s.rsps.alloc), ...Object.entries(s.rsps.units)].filter(([k, v]) => v < 0 && k !== CASH).map(([k]) => k)))];
-  const perp: PerpData = { high: {}, funding: {}, mm: {} };
+  // perp data for coins that are or were perps (shorts, longs above 1×)
+  const shortSyms = [...new Set([
+    ...sorted.flatMap((s) => [...Object.entries(s.rsps.alloc), ...Object.entries(s.rsps.units)].filter(([k, v]) => v < 0 && k !== CASH).map(([k]) => k)),
+    ...sorted.flatMap((s) => [...Object.keys(s.rsps.lev ?? {}), ...Object.keys(s.rsps.heldLev ?? {})])
+  ])];
+  const perp: PerpData = { high: {}, low: {}, funding: {}, mm: {} };
   if (shortSyms.length) {
     try { perp.mm = await fetchMaintenance(); } catch { /* default */ }
-    for (const sym of shortSyms) { try { perp.high[sym] = await fetchHighs(sym, from); perp.funding[sym] = await fetchFunding(sym, from); } catch { /* closes as highs */ } }
+    for (const sym of shortSyms) { try { const hl = await fetchHighLow(sym, from); perp.high[sym] = hl.high; perp.low![sym] = hl.low; perp.funding[sym] = await fetchFunding(sym, from); } catch { /* closes as highs */ } }
   }
 
   const sim = simulate(sorted, book, today, perp);
