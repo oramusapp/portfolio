@@ -32,8 +32,9 @@ import { dashboardStats } from './lib/dashboardStats';
 const BENCH_COLORS: Record<string, string> = { BTC: 'var(--amber)', SOL: 'var(--cyan)' };
 const EXTRA_COLORS = ['#d946ef', '#84cc16', '#f97316', '#6366f1'];
 
-type PfTab = 'crypto' | 'stocks' | 'ai';
-const PF_TABS: [PfTab, string][] = [['crypto', 'Crypto'], ['stocks', 'Stocks'], ['ai', 'AI Apocalypse']];
+// The 'AI Apocalypse' tab was removed on 19.11.2026 at the owner's request; its code and saved data stay (EtfApp, lib/etf.ts) so it can be restored.
+type PfTab = 'crypto' | 'stocks';
+const PF_TABS: [PfTab, string][] = [['crypto', 'Crypto'], ['stocks', 'Stocks']];
 
 function useNow(ms = 30_000) {
   const [now, setNow] = useState(Date.now());
