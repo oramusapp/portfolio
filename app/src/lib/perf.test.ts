@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { periodPerf } from './perf';
+import { perfWindow, periodPerf } from './perf';
 import type { DayRow } from './engine';
 
 const row = (date: string, value: number, invested: number, r: number, perpPnl = 0, rPerp = 0) =>
@@ -26,4 +26,17 @@ describe('periodPerf', () => {
     expect(rs.pnl).toBeCloseTo(0.6 * 50); expect(rs.pct).toBeCloseTo(0.0455 / 2);
   });
   it('no rows → null', () => { expect(periodPerf([], 'all', 'total')).toBeNull(); });
+});
+
+describe('perfWindow', () => {
+  const r = (date: string, totalGain: number) => ({ date, totalGain } as unknown as DayRow);
+  const rows = [r('2026-01-01', 0.1), r('2026-01-02', 0.21), r('2026-01-03', 0.089)];
+  it('All = the whole line from the start', () => {
+    const w = perfWindow(rows, 'all', 'total', '2025-12-31');
+    expect(w.start).toBe('2025-12-31'); [0, 0.1, 0.21, 0.089].forEach((v, i) => expect(w.values[i]).toBeCloseTo(v));
+  });
+  it('a shorter period starts at 0% at the close before it', () => {
+    const w = perfWindow(rows, '24h', 'total', '2025-12-31');
+    expect(w.start).toBe('2026-01-02'); expect(w.values[0]).toBe(0); expect(w.values[1]).toBeCloseTo(1.089 / 1.21 - 1);
+  });
 });

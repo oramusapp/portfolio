@@ -7,6 +7,7 @@ export const PERF_RANGES: [PerfRange, string][] = [['24h', '24h'], ['7d', '7d'],
 export const PERF_MODES: [PerfMode, string][] = [['total', 'Total'], ['sdca', 'SDCA'], ['rsps', 'RSPS'], ['perps', 'Perps']];
 const DAYS: Record<PerfRange, number | null> = { '24h': 1, '7d': 7, '30d': 30, all: null };
 
+
 /** Per mode: daily return, value, money put in (total = SDCA + RSPS). */
 const pick = (mode: PerfMode) => (r: DayRow) =>
   mode === 'sdca' ? { r: r.rSdca, v: r.sdcaValue, inv: r.sdcaInvested ?? 0 }
@@ -31,4 +32,14 @@ export function periodPerf(rows: DayRow[], range: PerfRange, mode: PerfMode): { 
   const f = pick(mode), last = f(rows[rows.length - 1]), before = i0 > 0 ? f(rows[i0 - 1]) : { v: 0, inv: 0 };
   const pnl = (last.v - before.v) - (last.inv - before.inv);
   return { pnl, pct: win.reduce((g, r) => g * (1 + f(r).r), 1) - 1, days: win.length, from: win[0].date };
+}
+
+/** The daily rows of a period and the line rebased to 0 at its start (the close before the first row of the window). */
+export function perfWindow(rows: DayRow[], range: PerfRange, mode: PerfMode, start: string) {
+  const n = DAYS[range], win = n == null ? rows : rows.slice(-n), i0 = rows.length - win.length, g = gainOf(mode);
+  const base = i0 > 0 ? g(rows[i0 - 1]) : 0;
+  return {
+    rows: win, start: i0 > 0 ? rows[i0 - 1].date : start,
+    values: [0, ...win.map((r) => (1 + base > 1e-12 ? (1 + g(r)) / (1 + base) - 1 : 0))]
+  };
 }

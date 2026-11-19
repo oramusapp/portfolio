@@ -14,7 +14,7 @@ import { usePerp } from './lib/usePerp';
 import { CASH, TOKENS, emojiOf } from './lib/tokens';
 import { addDays, msToReset, todayUtc } from './lib/utc';
 import { pct, tone, usd } from './lib/format';
-import { PERF_MODES, PERF_RANGES, gainOf, periodPerf, type PerfMode, type PerfRange } from './lib/perf';
+import { PERF_MODES, PERF_RANGES, perfWindow, periodPerf, type PerfMode, type PerfRange } from './lib/perf';
 import { Kpis } from './components/Kpis';
 import { LineChart, type Line } from './components/LineChart';
 import { SignalHistory } from './components/SignalHistory';
@@ -110,18 +110,20 @@ export default function App() {
   const sim = useMemo(() => simulate(sorted, book, today, perp), [sorted, book, today, perp]);
   const rows = sim?.rows ?? [];
   const last = rows.at(-1);
-  const dates = sim ? [sim.start, ...rows.map((r) => r.date)] : [];
+  // the chart shows the chosen period (24h / 7d / 30d / All), rebased to 0% at its start (19.11.2026)
+  const pw = sim ? perfWindow(rows, perfRange, series, sim.start) : null;
+  const dates = pw ? [pw.start, ...pw.rows.map((r) => r.date)] : [];
   const btcBh = sim ? benchmark(book, 'BTC', sim.start, rows.map((r) => r.date)).at(-1) ?? 0 : NaN;
 
   const lines: Line[] = [];
-  if (sim) {
-    lines.push({ key: 'pf', label: series === 'total' ? 'Portfolio' : series === 'perps' ? 'Perps' : series.toUpperCase(), color: 'var(--accent)', values: [0, ...rows.map(gainOf(series))], glow: true, area: true });
-    const add = (sym: string, color: string) => lines.push({ key: sym, label: `${sym} buy & hold`, color, dashed: true, values: [0, ...benchmark(book, sym, sim.start, rows.map((r) => r.date))] });
+  if (sim && pw) {
+    lines.push({ key: 'pf', label: series === 'total' ? 'Portfolio' : series === 'perps' ? 'Perps' : series.toUpperCase(), color: 'var(--accent)', values: pw.values, glow: true, area: true });
+    const add = (sym: string, color: string) => lines.push({ key: sym, label: `${sym} buy & hold`, color, dashed: true, values: [0, ...benchmark(book, sym, pw.start, pw.rows.map((r) => r.date))] });
     if (bench.BTC) add('BTC', BENCH_COLORS.BTC);
     if (bench.SOL) add('SOL', BENCH_COLORS.SOL);
     bench.extra.forEach((s, i) => add(s, EXTRA_COLORS[i % EXTRA_COLORS.length]));
   }
-  const markers = rows.map((r, i) => (r.duplicated ? -1 : i + 1)).filter((i) => i >= 0);
+  const markers = (pw?.rows ?? []).map((r, i) => (r.duplicated ? -1 : i + 1)).filter((i) => i >= 0);
 
   const hasToday = sorted.some((s) => s.date === today);
   const ms = msToReset(now);
