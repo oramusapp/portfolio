@@ -5,7 +5,7 @@ import type { DayRow } from './engine';
 const row = (date: string, r: number, gain: number): DayRow => ({
   date, signal: { date, createdAt: 0, sdca: { pct: 0, cash: 0, btc: 0 }, rsps: { alloc: {}, cash: 0, units: {} } }, duplicated: false,
   execs: [], sdca: null, rsps: null, value: 0, sdcaValue: 0, rspsValue: 0, r, rSdca: r, rRsps: 0, btcDay: 0,
-  totalGain: gain, sdcaGain: gain, rspsGain: 0, invested: 0, missing: [], fundingUsd: 0, liquidations: [], perpPnl: 0, rPerp: 0, perpGain: 0
+  totalGain: gain, sdcaGain: gain, rspsGain: 0, invested: 0, missing: [], fundingUsd: 0, liquidations: [], perpPnl: 0, rPerp: 0, perpGain: 0, sdcaInvested: 0, rspsInvested: 0
 });
 
 describe('dashboardStats', () => {

@@ -14,7 +14,7 @@ import { usePerp } from './lib/usePerp';
 import { CASH, TOKENS, emojiOf } from './lib/tokens';
 import { addDays, msToReset, todayUtc } from './lib/utc';
 import { pct, tone, usd } from './lib/format';
-import { PERF_RANGES, periodPerf, type PerfMode, type PerfRange } from './lib/perf';
+import { PERF_MODES, PERF_RANGES, gainOf, periodPerf, type PerfMode, type PerfRange } from './lib/perf';
 import { Kpis } from './components/Kpis';
 import { LineChart, type Line } from './components/LineChart';
 import { SignalHistory } from './components/SignalHistory';
@@ -81,9 +81,10 @@ export default function App() {
   const [feePct, setFeePct] = usePersisted<number>('settings.feePct', 0);
   const [hideValue, setHideValue] = usePersisted<boolean>('privacy.hideValue', false);   // blur the Portfolio value tile   // optional trading fee, % of each trade
   const [flows, setFlows] = usePersisted<Flow[]>('flows', []);
-  const [series, setSeries] = usePersisted<'total' | 'sdca' | 'rsps'>('chart.series', 'total');
+  // one switch for the chart line, PnL and %: Total / SDCA / RSPS / Perps (19.11.2026)
+  const [seriesRaw, setSeries] = usePersisted<PerfMode>('chart.series', 'total');
+  const series: PerfMode = PERF_MODES.some(([k]) => k === seriesRaw) ? seriesRaw : 'total';
   const [perfRange, setPerfRange] = usePersisted<PerfRange>('perf.range', '7d');
-  const [perfMode, setPerfMode] = usePersisted<PerfMode>('perf.mode', 'all');
   const [nwHistory, setNwHistory] = usePersisted<NetWorthSnapshot[]>('networth.history', []);
   const [lastBackup] = usePersisted<number>('backup.last', 0);
   const [backupSnooze, setBackupSnooze] = usePersisted<number>('backup.snooze', 0);
@@ -114,8 +115,7 @@ export default function App() {
 
   const lines: Line[] = [];
   if (sim) {
-    const pick = series === 'sdca' ? (r: typeof rows[number]) => r.sdcaGain : series === 'rsps' ? (r: typeof rows[number]) => r.rspsGain : (r: typeof rows[number]) => r.totalGain;
-    lines.push({ key: 'pf', label: series === 'total' ? 'Portfolio' : series.toUpperCase(), color: 'var(--accent)', values: [0, ...rows.map(pick)], glow: true, area: true });
+    lines.push({ key: 'pf', label: series === 'total' ? 'Portfolio' : series === 'perps' ? 'Perps' : series.toUpperCase(), color: 'var(--accent)', values: [0, ...rows.map(gainOf(series))], glow: true, area: true });
     const add = (sym: string, color: string) => lines.push({ key: sym, label: `${sym} buy & hold`, color, dashed: true, values: [0, ...benchmark(book, sym, sim.start, rows.map((r) => r.date))] });
     if (bench.BTC) add('BTC', BENCH_COLORS.BTC);
     if (bench.SOL) add('SOL', BENCH_COLORS.SOL);
@@ -189,7 +189,12 @@ export default function App() {
   };
   const hasData = signals.length > 0 || notes.length > 0 || netWorth.items.length > 0 || !!holdings;
   const backupDue = hasData && now - lastBackup > 30 * 86_400_000 && now > backupSnooze;
-  const extraOptions = TOKENS.map((t) => t.sym).filter((s) => s !== 'BTC' && s !== 'SOL' && !bench.extra.includes(s));
+  // benchmarks: BTC and SOL are picked like any other coin from “+ benchmark” (19.11.2026); the stored shape stays the same
+  const benchOn = [...(bench.BTC ? ['BTC'] : []), ...(bench.SOL ? ['SOL'] : []), ...bench.extra];
+  const benchAdd = (s: string) => setBench(s === 'BTC' || s === 'SOL' ? { ...bench, [s]: true } : { ...bench, extra: [...bench.extra, s] });
+  const benchDel = (s: string) => setBench(s === 'BTC' || s === 'SOL' ? { ...bench, [s]: false } : { ...bench, extra: bench.extra.filter((x) => x !== s) });
+  const benchColor = (s: string) => BENCH_COLORS[s] ?? EXTRA_COLORS[Math.max(0, bench.extra.indexOf(s)) % EXTRA_COLORS.length];
+  const extraOptions = TOKENS.map((t) => t.sym).filter((s) => !benchOn.includes(s));
   const errList = Object.entries(errors);
   const buildStats = () => dashboardStats({
     now: Date.now(), today, rows,
@@ -239,37 +244,31 @@ export default function App() {
         <div className="panel-head">
           <h2>Portfolio performance (%)</h2>
           <div className="checks">
-            <div className="seg">
-              {(['total', 'sdca', 'rsps'] as const).map((k) => <button key={k} className={series === k ? 'on' : ''} onClick={() => setSeries(k)}>{k === 'total' ? 'Total' : k.toUpperCase()}</button>)}
-            </div>
-            <label className="check amber"><input type="checkbox" checked={bench.BTC} onChange={(e) => setBench({ ...bench, BTC: e.target.checked })} /><span />BTC benchmark</label>
-            <label className="check purple"><input type="checkbox" checked={bench.SOL} onChange={(e) => setBench({ ...bench, SOL: e.target.checked })} /><span />SOL benchmark</label>
-            {bench.extra.map((s) => (
-              <label className="check" key={s}><input type="checkbox" checked onChange={() => setBench({ ...bench, extra: bench.extra.filter((x) => x !== s) })} /><span />{s} benchmark</label>
+            {benchOn.map((s) => (
+              <button key={s} type="button" className="bench-chip" style={{ borderColor: benchColor(s), color: benchColor(s) }} title={`Remove ${s} benchmark`} onClick={() => benchDel(s)}>{emojiOf(s)} {s} ✕</button>
             ))}
-            <select className="bench-add" value="" onChange={(e) => e.target.value && setBench({ ...bench, extra: [...bench.extra, e.target.value] })}>
+            <select className="bench-add" value="" aria-label="Add benchmark" onChange={(e) => e.target.value && benchAdd(e.target.value)}>
               <option value="">+ benchmark</option>
               {extraOptions.map((s) => <option key={s} value={s}>{emojiOf(s)} {s}</option>)}
             </select>
           </div>
         </div>
         {rows.length > 0 && (() => {
-          const pf = periodPerf(rows, perfRange, perfMode);
+          const pf = periodPerf(rows, perfRange, series);
           const hasPerps = rows.some((r) => r.perpPnl !== 0 || r.liquidations.length > 0);
           return (
             <div className="perf-bar">
               <div className="seg" role="group" aria-label="Period">
                 {PERF_RANGES.map(([k, label]) => <button key={k} className={perfRange === k ? 'on' : ''} aria-pressed={perfRange === k} onClick={() => setPerfRange(k)}>{label}</button>)}
               </div>
-              <select aria-label="Positions" value={perfMode} onChange={(e) => setPerfMode(e.target.value as PerfMode)}>
-                <option value="all">All (SDCA + RSPS)</option>
-                <option value="perps">Perps only</option>
-              </select>
+              <div className="seg" role="group" aria-label="Show">
+                {PERF_MODES.map(([k, label]) => <button key={k} className={series === k ? 'on' : ''} aria-pressed={series === k} onClick={() => setSeries(k)}>{label}</button>)}
+              </div>
               {pf && <div className="perf-nums" title={perfRange === '24h' ? 'Today: from the daily close (00:00 UTC) to the live price' : `From the close before ${pf.from} to the live price`}>
-                <div><small>PnL</small><b className={tone(pf.pnl)}>{hideValue ? '••••' : `${pf.pnl >= 0 ? '+' : '−'}${usd(Math.abs(pf.pnl), 2)}`}</b></div>
+                <div><small>PnL · {PERF_MODES.find(([k]) => k === series)![1]}</small><b className={tone(pf.pnl)}>{hideValue ? '••••' : `${pf.pnl >= 0 ? '+' : '−'}${usd(Math.abs(pf.pnl), 2)}`}</b></div>
                 <div><small>%</small><b className={tone(pf.pct)}>{pct(pf.pct, 2)}</b></div>
               </div>}
-              {perfMode === 'perps' && !hasPerps && <div className="dim small">No perp positions (shorts or longs above 1×) in this history yet.</div>}
+              {series === 'perps' && !hasPerps && <div className="dim small">No perp positions (shorts or longs above 1×) in this history yet.</div>}
               {perfRange === '24h' && <div className="dim small">24h = today since the daily close (00:00 UTC).</div>}
             </div>
           );
@@ -279,7 +278,7 @@ export default function App() {
           : <div className="empty">{loading ? 'Loading prices…' : 'Add your first signal to start tracking performance.'}</div>}
       </section>
 
-      <StatsCard rows={rows} book={book} benchmarks={[...(bench.BTC ? ['BTC'] : []), ...(bench.SOL ? ['SOL'] : []), ...bench.extra]} />
+      <StatsCard rows={rows} book={book} benchmarks={benchOn} />
 
       {errList.length > 0 && <div className="warn small">Price data unavailable: {errList.map(([s, e]) => `${s} (${e})`).join('; ')}</div>}
 

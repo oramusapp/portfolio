@@ -213,6 +213,7 @@ export interface DayRow {
   r: number; rSdca: number; rRsps: number; btcDay: number;
   totalGain: number; sdcaGain: number; rspsGain: number;
   invested: number; missing: string[];
+  sdcaInvested: number; rspsInvested: number;                   // the money put in per strategy (invested = their sum)
   fundingUsd: number;                                          // funding of the perps that day (+ received, − paid)
   liquidations: Liquidation[];                                 // perps liquidated that day
   perpPnl: number;                                             // P/L of the perp positions that day (price + funding + liquidations), USD
@@ -268,7 +269,7 @@ export function simulate(signals: Signal[], book: PriceBook, today: string, perp
     const v = u * (b(s) - a(s));
     return isPerp(u, levOf(st.lev, s)) && Number.isFinite(v) ? t + v : t;
   }, 0);
-  let active = sorted[0], idx = 1, iSd = 1, iRs = 1, iPerp = 1, invested = 0, started = false, prevLev: Record<string, number> | undefined;
+  let active = sorted[0], idx = 1, iSd = 1, iRs = 1, iPerp = 1, invested = 0, invSd = 0, invRs = 0, started = false, prevLev: Record<string, number> | undefined;
   const rows: DayRow[] = [];
   for (const d of daysBetween(sorted[0].date, today < sorted[0].date ? sorted[0].date : today)) {
     const prev = addDays(d, -1);
@@ -286,9 +287,11 @@ export function simulate(signals: Signal[], book: PriceBook, today: string, perp
         perpPnl += perpMove(rs, from, pe);
       }
       // what you typed in vs what was carried forward = a deposit (+) or withdrawal (−)
-      const typed = sdcaValue(sig.sdca, pe('BTC')) + rspsValue({ cash: sig.rsps.cash, units: sig.rsps.units }, pe);
-      const carried = started ? sdcaValue(sd, pe('BTC')) + rspsValue(rs, pe) : 0;
-      if (Number.isFinite(typed - carried)) invested += typed - carried;
+      const tSd = sdcaValue(sig.sdca, pe('BTC')), tRs = rspsValue({ cash: sig.rsps.cash, units: sig.rsps.units }, pe);
+      const cSd = started ? sdcaValue(sd, pe('BTC')) : 0, cRs = started ? rspsValue(rs, pe) : 0;
+      if (Number.isFinite(tSd + tRs - cSd - cRs)) invested += tSd + tRs - cSd - cRs;
+      if (Number.isFinite(tSd - cSd)) invSd += tSd - cSd;
+      if (Number.isFinite(tRs - cRs)) invRs += tRs - cRs;
       // a signal saved before leverage existed has no heldLev: the held perps keep the leverage carried so far
       const sigX = sig.rsps.heldLev === undefined && prevLev ? { ...sig, rsps: { ...sig.rsps, heldLev: prevLev } } : sig;
       const ex = executeSignal(sigX, pe);
@@ -341,7 +344,7 @@ export function simulate(signals: Signal[], book: PriceBook, today: string, perp
       date: d, signal: active, duplicated: !sigs.length, execs, sdca: lastEx?.sdca ?? null, rsps: lastEx?.rsps ?? null,
       value: s1 + r1, sdcaValue: s1, rspsValue: r1,
       r, rSdca, rRsps, btcDay: ret(p1('BTC'), p0('BTC')),
-      totalGain: idx - 1, sdcaGain: iSd - 1, rspsGain: iRs - 1, invested,
+      totalGain: idx - 1, sdcaGain: iSd - 1, rspsGain: iRs - 1, invested, sdcaInvested: invSd, rspsInvested: invRs,
       missing: held.filter((s) => !Number.isFinite(p0(s)) || !Number.isFinite(p1(s))),
       fundingUsd, liquidations, perpPnl, rPerp, perpGain: iPerp - 1
     });
