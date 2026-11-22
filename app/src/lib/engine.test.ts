@@ -350,3 +350,37 @@ describe('RSPS leverage 1×–5× (19.11.2026)', () => {
     expect(s.rsps.lev).toEqual({ SOL: 4 }); expect(s.rows.at(-1)!.perpPnl).toBeCloseTo(200);
   });
 });
+
+describe('fees: spot vs perp (Hyperliquid, 22.11.2026)', () => {
+  const px = (s: string) => ({ CASH: 1, SOL: 100, OP: 2 } as Record<string, number>)[s];
+  it('a 1× long pays the spot rate, a short and a leveraged long pay the perp rate', () => {
+    const p = rebalance({ alloc: { SOL: 40, OP: -10, CASH: 50 }, cash: 1000, units: {}, lev: {} }, px, 0.0007, 0.00045);
+    expect(p.rows.find((r) => r.sym === 'SOL')!.feeRate).toBe(0.0007);
+    expect(p.rows.find((r) => r.sym === 'OP')!.feeRate).toBe(0.00045);
+    expect(p.fee).toBeCloseTo(400 * 0.0007 + 100 * 0.00045);
+    const q = rebalance({ alloc: { SOL: 40, CASH: 60 }, cash: 1000, units: {}, lev: { SOL: 3 } }, px, 0.0007, 0.00045);
+    expect(q.rows.find((r) => r.sym === 'SOL')!.feeRate).toBe(0.00045);
+    expect(q.fee).toBeCloseTo(1200 * 0.00045);
+  });
+  it('closing a held perp pays the perp rate', () => {
+    const p = rebalance({ alloc: { CASH: 100 }, cash: 1200, units: { OP: -100 }, heldLev: {} }, px, 0.0007, 0.00045);
+    expect(p.rows.find((r) => r.sym === 'OP')!.feeRate).toBe(0.00045);
+  });
+  it('without a perp rate everything pays `fee` (old signals unchanged)', () => {
+    const a = rebalance({ alloc: { SOL: 40, OP: -10, CASH: 50 }, cash: 1000, units: {} }, px, 0.001);
+    expect(a.fee).toBeCloseTo(500 * 0.001);
+  });
+  it('the simulation charges the stored perp fee', () => {
+    const btc = { '2026-01-01': 1, '2026-01-02': 1, '2026-01-03': 1 };
+    const book: PriceBook = { BTC: btc, OP: { '2026-01-01': 2, '2026-01-02': 2, '2026-01-03': 2 } };
+    const sig: Signal = { date: '2026-01-02', createdAt: 1, sdcaNew: false, px: { OP: 2 }, fee: 0.0007, feePerp: 0.00045, sdca: { pct: 0, cash: 0, btc: 0 }, rsps: { alloc: { OP: -50, CASH: 50 }, cash: 1000, units: {} } };
+    const s = simulate([sig], book, '2026-01-03')!;
+    expect(s.rows.at(-1)!.value).toBeCloseTo(1000 - 500 * 0.00045);
+  });
+  it('Hyperliquid liquidation formula (isolated) equals our liqPrice', () => {
+    // liq = price − side × margin_available / size / (1 − l × side), margin_available = margin − MM × notional
+    const hl = (e: number, L: number, mm: number, side: 1 | -1) => { const size = 1, notional = e, margin = notional / L; return e - side * (margin - mm * notional) / size / (1 - mm * side); };
+    expect(liqPrice(100, 0.1, 3, true)).toBeCloseTo(hl(100, 3, 0.1, 1));
+    expect(liqPrice(100, 0.05, 2, false)).toBeCloseTo(hl(100, 2, 0.05, -1));
+  });
+});

@@ -16,6 +16,13 @@
 //   short are perpetuals: funding, isolated liquidation (whole margin lost). In the model a perp position adds
 //   margin − units × entry to cash, so cash + units × price = margin + unrealized P/L, exactly like an isolated perp.
 //   Liquidation price: long entry × (1 − 1/L) / (1 − MM) (the day's low), short entry × (1 + 1/L) / (1 + MM) (the day's high).
+//   These are Hyperliquid's rules (docs, checked 22.11.2026): leverage is a whole number from 1 to the coin's max leverage;
+//   initial margin = size × price / leverage; maintenance margin MM = half of the initial margin at max leverage
+//   (1.25% at 40× … 16.7% at 3×); isolated liquidation price = price − side × (margin − MM × notional) / size / (1 − MM × side),
+//   which is the formula above. Kept conservative: at liquidation the whole margin is lost (Hyperliquid returns what is
+//   left above MM when the position is closed on the book; only a backstop liquidation takes everything).
+// • FEES (22.11.2026): spot trades pay `fee`, perp trades (shorts, longs above 1×, opening or closing) pay `feePerp`;
+//   defaults are Hyperliquid's base tier for market orders (spot 0.070%, perps 0.045%). Funding is separate (hourly).
 // • Funding (Hyperliquid, hourly): each day the short gets −units × close × Σ that day's funding rates (positive rate:
 //   longs pay shorts). It counts as performance and as realized P/L.
 // • Liquidation (1×, isolated): when the day's high reaches 2 × entry / (1 + MM) — MM = maintenance margin = half the
@@ -39,13 +46,14 @@ export interface Signal {
   id?: string;   // unique per signal (several signals can share a date); older signals have none → their date is the id
   date: string; createdAt: number; sdca: SdcaInput; rsps: RspsInput; px?: Record<string, number>; sdcaNew?: boolean; rspsNew?: boolean;
   fee?: number;   // trading fee as a fraction of each trade's value, stored with the signal (setting at save time)
+  feePerp?: number;   // fee for perp trades (shorts, longs above 1×); missing = `fee` (signals saved before 22.11.2026)
 }
 
 /** The orders a signal makes at the given prices; a strategy without a new signal keeps its holdings unchanged. */
 export function executeSignal(sig: Signal, px: (sym: string) => number) {
   const fee = sig.fee ?? 0;
   const order = sdcaOrder(sig.sdcaNew === false ? { ...sig.sdca, pct: 0 } : sig.sdca, px('BTC'), fee);
-  const plan = sig.rspsNew === false ? null : rebalance(sig.rsps, px, fee);
+  const plan = sig.rspsNew === false ? null : rebalance(sig.rsps, px, fee, sig.feePerp ?? fee);
   const rsps: RspsState = plan ? plan.after : { cash: sig.rsps.cash, units: { ...sig.rsps.units }, ...levFor(sig.rsps.units, sig.rsps.heldLev) };
   return { order, plan, sdca: order.after, rsps };
 }
@@ -124,6 +132,7 @@ export interface RebalanceRow {
   sym: string; price: number; curUnits: number; curUsd: number; curPct: number;
   tgtPct: number; tgtUsd: number; deltaUsd: number; deltaPct: number; deltaUnits: number;
   lev: number; marginPct: number;   // target leverage and the % of the part put in as margin (= the signal's %)
+  feeRate: number;                  // fee charged on this coin's trade: the perp rate if it is or becomes a perp, else spot
 }
 export interface RebalancePlan { total: number; rows: RebalanceRow[]; after: RspsState; missing: string[]; fee: number; heldLev?: Record<string, number>; }
 
@@ -166,10 +175,14 @@ export function perpMargin(units: Record<string, number>, entry: (sym: string) =
   }, 0);
 }
 
+/** Hyperliquid base-tier (tier 0) fees, from its docs (checked 22.11.2026): perps taker 0.045% / maker 0.015%,
+ *  spot taker 0.070% / maker 0.040% of the traded value. */
+export const HL_FEES = { perpTaker: 0.045, perpMaker: 0.015, spotTaker: 0.07, spotMaker: 0.04 } as const;   // in %
 /** fee = fraction of the traded value (token sells + buys); it is taken proportionally from the resulting holdings.
+ *  feePerp = the rate for coins that are or become perps (shorts, longs above 1×); spot coins pay `fee`.
  *  A negative target is a short: negative units, and cash = CASH% + the collateral and the sale proceeds of the shorts
  *  (2 × their size), so cash + Σ units × price = the part's value. Long-only allocations give the same result as before. */
-export function rebalance(inp: RspsInput, px: (sym: string) => number, fee = 0): RebalancePlan {
+export function rebalance(inp: RspsInput, px: (sym: string) => number, fee = 0, feePerp = fee): RebalancePlan {
   const syms = [...new Set([CASH, ...Object.keys(inp.units), ...Object.keys(inp.alloc)])];
   const missing = syms.filter((s) => !Number.isFinite(px(s)));
   const cur = (s: string) => (s === CASH ? inp.cash : inp.units[s] ?? 0);
@@ -185,10 +198,11 @@ export function rebalance(inp: RspsInput, px: (sym: string) => number, fee = 0):
     return {
       sym, price, curUnits, curUsd, curPct: total > 0 ? curUsd / total * 100 : 0, tgtPct, tgtUsd,
       deltaUsd, deltaPct: total > 0 ? deltaUsd / total * 100 : 0, deltaUnits: deltaUsd / price,
-      lev: sym === CASH ? 1 : levOf(inp.lev, sym), marginPct: sym === CASH ? inp.alloc[CASH] ?? 0 : Math.abs(inp.alloc[sym] ?? 0)
+      lev: sym === CASH ? 1 : levOf(inp.lev, sym), marginPct: sym === CASH ? inp.alloc[CASH] ?? 0 : Math.abs(inp.alloc[sym] ?? 0),
+      feeRate: sym === CASH ? 0 : isPerp(curUnits, levOf(inp.heldLev, sym)) || isPerp(tgtUsd, levOf(inp.lev, sym)) ? feePerp : fee
     };
   });
-  const feeUsd = fee * rows.filter((r) => r.sym !== CASH).reduce((t, r) => t + Math.abs(r.deltaUsd), 0);
+  const feeUsd = rows.reduce((t, r) => t + (r.sym === CASH ? 0 : Math.abs(r.deltaUsd) * r.feeRate), 0);
   const k = total > 0 && Number.isFinite(feeUsd) ? (total - feeUsd) / total : 1;
   const units: Record<string, number> = {};
   for (const r of rows) if (r.sym !== CASH && Math.abs(r.tgtUsd) > EPS) units[r.sym] = r.tgtUsd * k / r.price;
@@ -426,7 +440,7 @@ export function costBasis(signals: Signal[], book: PriceBook, events: PerpEvent[
     applyEvents(sig.date);
     const prev = addDays(sig.date, -1), year = sig.date.slice(0, 4);
     const pe = (s: string) => sig.px?.[s] ?? priceOn(book, s, prev);
-    const fee = sig.fee ?? 0;
+    const fee = sig.fee ?? 0, feeP = sig.feePerp ?? fee;
     // holdings typed in vs what the replay holds → transfers in / out
     const adjust = (k: string, typed: number, price: number) => {
       const d = typed - (pos[k]?.units ?? 0);
@@ -441,8 +455,9 @@ export function costBasis(signals: Signal[], book: PriceBook, events: PerpEvent[
     if (ex.plan) {
       for (const s of new Set([...Object.keys(sig.rsps.units), ...Object.keys(ex.rsps.units)])) {
         const d = (ex.rsps.units[s] ?? 0) - (sig.rsps.units[s] ?? 0);
-        if (d > EPS) add(`RSPS:${s}`, d, d * pe(s) / (1 - fee || 1), year);
-        else if (d < -EPS) remove(`RSPS:${s}`, -d, -d * pe(s) * (1 - fee), year);
+        const f = isPerp(sig.rsps.units[s] ?? 0, levOf(sig.rsps.heldLev, s)) || isPerp(ex.rsps.units[s] ?? 0, levOf(ex.rsps.lev, s)) ? feeP : fee;
+        if (d > EPS) add(`RSPS:${s}`, d, d * pe(s) / (1 - f || 1), year);
+        else if (d < -EPS) remove(`RSPS:${s}`, -d, -d * pe(s) * (1 - f), year);
       }
     }
   }

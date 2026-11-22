@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { benchmark, bySignalOrder, costBasis, executeSignal, sigId, simulate, type Signal } from './lib/engine';
+import { HL_FEES, benchmark, bySignalOrder, costBasis, executeSignal, sigId, simulate, type Signal } from './lib/engine';
 import { StatsCard } from './components/StatsCard';
 import { exportNow } from './components/BackupPanel';
 import { priceOn } from './lib/prices';
@@ -78,7 +78,10 @@ export default function App() {
   const [theme, setTheme] = usePersisted<'dark' | 'light'>('theme', 'dark');
   useEffect(() => { applyTheme(theme); }, [theme]);
   const [portfolioOpen, setPortfolioOpen] = useState(false);
-  const [feePct, setFeePct] = usePersisted<number>('settings.feePct', 0);
+  const [feePct, setFeePct] = usePersisted<number>('settings.feePct', 0);   // stocks (and crypto signals saved before 22.11.2026)
+  // crypto fees (22.11.2026): Hyperliquid base tier, market (taker) orders by default
+  const [feeSpotPct, setFeeSpotPct] = usePersisted<number>('settings.feeSpotPct', HL_FEES.spotTaker);
+  const [feePerpPct, setFeePerpPct] = usePersisted<number>('settings.feePerpPct', HL_FEES.perpTaker);
   const [hideValue, setHideValue] = usePersisted<boolean>('privacy.hideValue', false);   // blur the Portfolio value tile   // optional trading fee, % of each trade
   const [flows, setFlows] = usePersisted<Flow[]>('flows', []);
   // one switch for the chart line, PnL and %: Total / SDCA / RSPS / Perps (19.11.2026)
@@ -305,7 +308,7 @@ export default function App() {
 
       {portfolioOpen && <PortfolioView today={today} book={book} positions={positions} shorts={shortInfo} onClose={() => setPortfolioOpen(false)}
         sdca={holdings?.sdca ?? sim?.sdca ?? { cash: 0, btc: 0 }} rsps={holdings?.rsps ?? sim?.rsps ?? { cash: 0, units: {} }} />}
-      {settingsOpen && <SettingsPanel theme={theme} setTheme={setTheme} feePct={feePct} setFeePct={setFeePct} reminders={reminders} saveReminder={saveReminder} deleteReminder={deleteReminder} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsPanel theme={theme} setTheme={setTheme} feePct={feePct} setFeePct={setFeePct} feeSpotPct={feeSpotPct} setFeeSpotPct={setFeeSpotPct} feePerpPct={feePerpPct} setFeePerpPct={setFeePerpPct} reminders={reminders} saveReminder={saveReminder} deleteReminder={deleteReminder} onClose={() => setSettingsOpen(false)} />}
       {saveFailed && <div className="update-banner"><div><b>Could not save</b><div className="dim small">The browser’s storage is full or blocked. Export a backup now.</div></div>
         <button className="btn gold small" onClick={() => { setSaveFailed(false); setSettingsOpen(true); }}>Backup</button></div>}
 
@@ -313,7 +316,7 @@ export default function App() {
         initial={holdings ?? { sdca: sim?.sdca ?? { cash: 0, btc: 0 }, rsps: sim?.rsps ?? { cash: 0, units: {} }, updatedAt: 0 }}
         onSave={(h) => { if (holdings) archive('pp.holdings', 'replaced', 'Portfolio holdings', holdings); setHoldings(h); setHoldingsOpen(false); setFormSyms([]); }} onClose={() => { setHoldingsOpen(false); setFormSyms([]); }} />}
 
-      {form && <SignalForm mm={perp.mm} feePct={feePct} today={today} sameDay={signals.filter((x) => x.date === form.date).length} liveAt={liveAt} date={form.date} initial={form.initial} book={book} editingExisting={form.existing}
+      {form && <SignalForm mm={perp.mm} feePct={feeSpotPct} feePerpPct={feePerpPct} today={today} sameDay={signals.filter((x) => x.date === form.date).length} liveAt={liveAt} date={form.date} initial={form.initial} book={book} editingExisting={form.existing}
         onNeed={setFormSyms} onSave={saveSignal} onClose={() => { setForm(null); setFormSyms([]); }} />}
     </div>
   );

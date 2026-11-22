@@ -10,7 +10,9 @@ import { parseSignal } from '../lib/parseSignal';
 
 interface Props {
   date: string; initial: Signal; book: PriceBook; editingExisting: boolean;
-  onNeed: (syms: string[]) => void; onSave: (s: Signal) => void; onClose: () => void; today: string; liveAt: number | null; feePct: number; sameDay?: number;
+  onNeed: (syms: string[]) => void; onSave: (s: Signal) => void; onClose: () => void; today: string; liveAt: number | null; sameDay?: number;
+  /** crypto fees in %: spot (SDCA and RSPS longs at 1×) and perp (shorts, longs above 1×) */
+  feePct: number; feePerpPct: number;
   /** maintenance margin per coin (Hyperliquid) → the exchange's max leverage, for a warning */
   mm?: Record<string, number>;
 }
@@ -39,7 +41,7 @@ function AssetSelect({ value, options, onChange }: { value: string; options: str
   );
 }
 
-export function PairRows({ rows, setRows, options, unit, placeholder, extra, sides, levs }: { rows: Pair[]; setRows: (r: Pair[]) => void; options: string[]; unit: string; placeholder: string; extra?: (r: Pair) => ReactNode; sides?: boolean; levs?: boolean }) {
+export function PairRows({ rows, setRows, options, unit, placeholder, extra, sides, levs, maxLevOf }: { rows: Pair[]; setRows: (r: Pair[]) => void; options: string[]; unit: string; placeholder: string; extra?: (r: Pair) => ReactNode; sides?: boolean; levs?: boolean; maxLevOf?: (sym: string) => number }) {
   const free = (keep: string) => options.filter((s) => s === keep || !rows.some((r) => r.sym === s));
   return (
     <div className="pairs">
@@ -52,12 +54,16 @@ export function PairRows({ rows, setRows, options, unit, placeholder, extra, sid
             <button type="button" className={`ls ${r.short ? 'short' : 'long'}`} aria-pressed={!!r.short} title={r.short ? `Short (perp, ${r.lev ?? 1}× leverage) — tap for long` : (r.lev ?? 1) > 1 ? `Long (perp, ${r.lev}× leverage) — tap for short` : 'Long (spot) — tap for short (perp)'}
               onClick={() => setRows(rows.map((x, j) => (j === i ? { ...x, short: !x.short } : x)))}>{r.short ? 'SHORT' : 'LONG'}</button>
           )}
-          {levs && r.sym !== CASH && (
-            <select className={`lev${(r.lev ?? 1) > 1 ? ' on' : ''}`} aria-label={`${r.sym} leverage`} title="Leverage: 1× = no leverage (a 1× long is spot), up to 5×"
-              value={r.lev ?? 1} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, lev: Number(e.target.value) > 1 ? Number(e.target.value) : undefined } : x)))}>
-              {LEVS.map((l) => <option key={l} value={l}>{l}×</option>)}
-            </select>
-          )}
+          {levs && r.sym !== CASH && (() => {
+            // Hyperliquid: leverage is a whole number from 1 to the coin's max leverage (here capped at 5×)
+            const max = maxLevOf ? maxLevOf(r.sym) : NaN;
+            return (
+              <select className={`lev${(r.lev ?? 1) > 1 ? ' on' : ''}`} aria-label={`${r.sym} leverage`} title={`Leverage: 1× = no leverage (a 1× long is spot), up to 5×${Number.isFinite(max) ? `; Hyperliquid max for ${r.sym}: ${max}×` : ''}`}
+                value={r.lev ?? 1} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, lev: Number(e.target.value) > 1 ? Number(e.target.value) : undefined } : x)))}>
+                {LEVS.map((l) => <option key={l} value={l} disabled={Number.isFinite(max) && l > max && l !== (r.lev ?? 1)}>{l}×</option>)}
+              </select>
+            );
+          })()}
           {extra?.(r)}
           <button className="icon" onClick={() => setRows(rows.filter((_, j) => j !== i))} title="Remove"><IcTrash width={16} /></button>
         </div>
@@ -67,9 +73,10 @@ export function PairRows({ rows, setRows, options, unit, placeholder, extra, sid
   );
 }
 
-export function SignalForm({ date, initial, book, editingExisting, onNeed, onSave, onClose, today, liveAt, feePct, sameDay = 0, mm }: Props) {
-  // fee: today's signal uses the setting, an older one keeps the fee it was saved with
+export function SignalForm({ date, initial, book, editingExisting, onNeed, onSave, onClose, today, liveAt, feePct, feePerpPct, sameDay = 0, mm }: Props) {
+  // fee: today's signal uses the settings, an older one keeps the fees it was saved with
   const fee = date === today ? feePct / 100 : initial.fee ?? 0;
+  const feePerp = date === today ? feePerpPct / 100 : initial.feePerp ?? fee;
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, []);
   const [side, setSide] = useState<'buy' | 'sell'>(initial.sdca.pct < 0 ? 'sell' : 'buy');
@@ -126,7 +133,7 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
 
   const btcPx = px('BTC');
   const order = useMemo(() => (Number.isFinite(btcPx) ? sdcaOrder(sdcaInput, btcPx, fee) : null), [btcPx, side, sdcaPct, sdcaCash, sdcaBtc, fee]); // eslint-disable-line react-hooks/exhaustive-deps
-  const plan = rebalance(rspsInput, px, fee);
+  const plan = rebalance(rspsInput, px, fee, feePerp);
   const sum = alloc.reduce((s, r) => s + n(r.v), 0);   // shorts count with their size
   const shorts = alloc.filter((r) => r.short && r.sym !== CASH && n(r.v) > 0);
   const levRows = alloc.filter((r) => r.sym !== CASH && n(r.v) > 0 && (r.lev ?? 1) > 1);
@@ -155,7 +162,7 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
     const used = ['BTC', ...Object.keys(allocRec), ...Object.keys(unitsRec)].filter((k) => k !== CASH);
     const snapshot = Object.fromEntries(used.map((k) => [k, px(k)]).filter(([, v]) => Number.isFinite(v as number)));
     onSave({
-      date, createdAt: Date.now(), px: snapshot, sdcaNew, rspsNew, fee,
+      date, createdAt: Date.now(), px: snapshot, sdcaNew, rspsNew, fee, feePerp,
       sdca: sdcaNew ? sdcaInput : { ...sdcaInput, pct: 0 },
       rsps: {
         alloc: rspsNew ? Object.fromEntries(Object.entries(allocRec).filter(([, v]) => v !== 0)) : initial.rsps.alloc, cash: rspsInput.cash, units: unitsRec,
@@ -229,7 +236,7 @@ export function SignalForm({ date, initial, book, editingExisting, onNeed, onSav
               </div>
             ) : <>
             <div className="dim small">Target allocation (100%; anything left under 100% goes to {emojiOf(CASH)} CASH). Tap LONG / SHORT to switch a coin's side; 1×–5× = leverage (1× = none, the % is the margin):</div>
-            <PairRows rows={alloc} setRows={setAlloc} options={ALL_ASSETS} unit="%" placeholder="0" sides levs />
+            <PairRows rows={alloc} setRows={setAlloc} options={ALL_ASSETS} unit="%" placeholder="0" sides levs maxLevOf={(s) => maxLevFromMm(mm?.[s])} />
             <div className={Math.abs(sum - 100) <= 0.01 ? 'pos small' : 'warn small'}>Sum: {+sum.toFixed(2)}%{cashAdded > 0 && <> — the remaining <b>{+cashAdded.toFixed(4)}%</b> goes to {emojiOf(CASH)} CASH (CASH {+allocRec[CASH].toFixed(4)}% in total)</>}</div>
             {shorts.length > 0 && <div className="dim small">Short {+shorts.reduce((t, r) => t + n(r.v), 0).toFixed(2)}% as a perpetual short (margin = the %, position = margin × leverage): it gains when the price falls and loses when it rises. Funding (Hyperliquid) is counted, and a short is liquidated — its margin lost — if the price rises to entry × (1 + 1/leverage) / (1 + maintenance margin) (about 2× entry at 1×).</div>}
             {levRows.length > 0 && <div className="dim small">Leverage: {levRows.map((r) => `${r.sym} ${+n(r.v).toFixed(2)}% × ${r.lev} = ${+(n(r.v) * r.lev!).toFixed(2)}% ${r.short ? 'short' : 'long'}`).join(' · ')}. Total exposure <b>{+exposure.toFixed(2)}%</b> of RSPS. A leveraged long is a perp (funding; liquidated — margin lost — at entry × (1 − 1/leverage) / (1 − maintenance margin)).</div>}

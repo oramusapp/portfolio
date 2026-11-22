@@ -387,3 +387,4 @@ table.mini td.wrap { white-space: normal; }
 .perf-nums b { font-size: 18px; font-variant-numeric: tabular-nums; }
 @media (max-width: 560px) { .perf-nums { margin-left: 0; width: 100%; justify-content: space-between; } .perf-nums div { align-items: flex-start; } }
 .bench-chip { border: 1px solid var(--line); background: transparent; border-radius: 8px; padding: 5px 9px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.fee-fields { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }

@@ -93,7 +93,12 @@ export function RebalanceView({ p, live, partLabel = 'RSPS part', liveText }: { 
         if (partLabel === 'RSPS part' && hasShort) return <div className="cash-line">{emojiOf(CASH)} USDT equity: {usd(eqNow, 2)} → <b>{usd(eqAfter, 2)}</b> <span className="dim">({(eqAfter / p.total * 100).toFixed(1)}% of RSPS)</span>{margin > MIN_USD ? <> · of it margin of the perps ≈ {usd(margin, 2)}, free ≈ <b>{usd(eqAfter - margin, 2)}</b></> : null}</div>;
         return <div className="cash-line">{emojiOf(CASH)} Cash: {usd(cash.curUsd, 2)} → <b>{usd(p.after.cash, 2)}</b> <span className="dim">({cash.tgtPct.toFixed(1)}% of {partLabel === 'RSPS part' ? 'RSPS' : 'portfolio'})</span></div>;
       })()}
-      {p.fee > 0 && <div className="dim small">Fees ≈ {usd(p.fee, 2)} — taken proportionally from the new holdings.</div>}
+      {p.fee > 0 && (() => {
+        const traded = p.rows.filter((r) => r.sym !== CASH && Math.abs(r.deltaUsd) > MIN_USD);
+        const rates = [...new Set(traded.map((r) => r.feeRate))].filter((x) => x > 0).sort((x, y) => x - y);
+        const perp = traded.filter((r) => r.feeRate > 0 && r.feeRate === Math.max(...rates) && rates.length > 1).map((r) => r.sym);
+        return <div className="dim small">Fees ≈ {usd(p.fee, 2)} — taken proportionally from the new holdings{rates.length ? ` (${rates.map((x) => `${+(x * 100).toFixed(4)}%`).join(' / ')} of the traded value${perp.length ? `; perp rate on ${perp.join(', ')}` : ''})` : ''}.</div>;
+      })()}
       {p.missing.length > 0 && <div className="warn small">Missing price: {p.missing.join(', ')}</div>}
     </div>
   );

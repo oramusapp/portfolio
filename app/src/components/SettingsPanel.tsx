@@ -4,6 +4,7 @@ import { IcBell, IcClose, IcPen, IcPlus, IcTrash } from './icons';
 import { WEEKDAYS, describe, dueFor, localToday, nextOccurrence, type Reminder, type Schedule } from '../lib/reminders';
 import type { Theme } from '../lib/theme';
 import { ask } from '../lib/platform';
+import { HL_FEES } from '../lib/engine';
 
 type Kind = Schedule['kind'];
 interface Draft { id?: string; title: string; action: string; kind: Kind; day: string; weekday: number; date: string; }
@@ -17,15 +18,30 @@ const toDraft = (r: Reminder): Draft => ({
 
 interface Props {
   theme: Theme; setTheme: (t: Theme) => void; feePct: number; setFeePct: (v: number) => void;
+  feeSpotPct: number; setFeeSpotPct: (v: number) => void; feePerpPct: number; setFeePerpPct: (v: number) => void;
   reminders: Reminder[]; saveReminder: (r: Reminder) => void; deleteReminder: (r: Reminder) => void;
   onClose: () => void;
 }
 
-export function SettingsPanel({ theme, setTheme, feePct, setFeePct, reminders, saveReminder, deleteReminder, onClose }: Props) {
+/** One fee field (% of the traded value): saved on blur or with the button; 0–5%. */
+function FeeField({ label, value, onSave }: { label: string; value: number; onSave: (v: number) => void }) {
+  const [txt, setTxt] = useState(value ? String(value) : '');
+  const num = txt.trim() === '' ? 0 : Number(txt.replace(',', '.'));
+  const bad = !(num >= 0 && num < 5);
+  return (
+    <label>{label}
+      <div className="field" style={{ maxWidth: 260 }}>
+        <input inputMode="decimal" placeholder="0" value={txt} onChange={(e) => setTxt(e.target.value)} onBlur={() => { if (!bad) onSave(num); }} />
+        <span className="unit">% per trade</span>
+      </div>
+      {bad ? <div className="warn small">Enter a number from 0 to 5.</div> : num !== value ? <button type="button" className="btn gold small" style={{ alignSelf: 'flex-start' }} onClick={() => onSave(num)}>Save</button> : null}
+    </label>
+  );
+}
+
+export function SettingsPanel({ theme, setTheme, feePct, setFeePct, feeSpotPct, setFeeSpotPct, feePerpPct, setFeePerpPct, reminders, saveReminder, deleteReminder, onClose }: Props) {
+  const [feeKey, setFeeKey] = useState(0);   // remounts the fee fields after a preset
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [fee, setFee] = useState(feePct ? String(feePct) : '');
-  const feeNum = fee.trim() === '' ? 0 : Number(fee.replace(',', '.'));
-  const feeErr = !(feeNum >= 0 && feeNum < 5);
   const today = localToday();
   const dayNum = Number(draft?.day);
   const err = !draft ? null
@@ -64,13 +80,19 @@ export function SettingsPanel({ theme, setTheme, feePct, setFeePct, reminders, s
         </section>
 
         <section className="set-sec">
-          <h3>Trading fees <span className="dim small">(optional)</span></h3>
-          <div className="dim small">Taken from each SDCA and RSPS trade of new signals. Leave empty for no fees. Older signals keep the fee they were saved with.</div>
-          <div className="field" style={{ maxWidth: 260 }}>
-            <input inputMode="decimal" placeholder="0" value={fee} onChange={(e) => setFee(e.target.value)} onBlur={() => { if (!feeErr) setFeePct(feeNum); }} />
-            <span className="unit">% per trade</span>
+          <h3>Trading fees</h3>
+          <div className="dim small">Taken from each trade of new signals as a % of the traded value. Older signals keep the fees they were saved with.</div>
+          <div className="seg" role="group" aria-label="Fee presets">
+            <button type="button" onClick={() => { setFeeSpotPct(HL_FEES.spotTaker); setFeePerpPct(HL_FEES.perpTaker); setFeeKey((k) => k + 1); }}>Hyperliquid · market (taker)</button>
+            <button type="button" onClick={() => { setFeeSpotPct(HL_FEES.spotMaker); setFeePerpPct(HL_FEES.perpMaker); setFeeKey((k) => k + 1); }}>Hyperliquid · limit (maker)</button>
+            <button type="button" onClick={() => { setFeeSpotPct(0); setFeePerpPct(0); setFeeKey((k) => k + 1); }}>No fees</button>
           </div>
-          {feeErr ? <div className="warn small">Enter a number from 0 to 5.</div> : feeNum !== feePct ? <button className="btn gold small" style={{ alignSelf: 'flex-start' }} onClick={() => setFeePct(feeNum)}>Save fee</button> : null}
+          <div key={feeKey} className="fee-fields">
+            <FeeField label="Crypto spot — SDCA (BTC) and RSPS longs at 1×" value={feeSpotPct} onSave={setFeeSpotPct} />
+            <FeeField label="Crypto perps — RSPS shorts and longs above 1×" value={feePerpPct} onSave={setFeePerpPct} />
+          </div>
+          <div className="dim small">Hyperliquid base tier (14-day volume under $5M): perps {HL_FEES.perpTaker}% taker / {HL_FEES.perpMaker}% maker, spot {HL_FEES.spotTaker}% taker / {HL_FEES.spotMaker}% maker. Funding is counted separately (hourly rates). Liquidations on Hyperliquid have no extra fee.</div>
+          <FeeField label="Stocks" value={feePct} onSave={setFeePct} />
         </section>
 
         <section className="set-sec">
