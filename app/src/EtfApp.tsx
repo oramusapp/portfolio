@@ -85,12 +85,29 @@ function DcaView({ o }: { o: DcaOrder }) {
 }
 
 // ---------- signal form ----------
-function EtfSignalForm({ uni, date, today, initial, book, existing, feePct, sameDay, onSave, onClose }: {
+/** Broker minimum per order converted to USD for each ticker: `min` in the listing's currency (EUR / GBP; GBp = pence)
+ *  at the latest close's FX rate (USD close / local close). USD listings: `min` USD. */
+function minFeesUsd(tickers: string[], markets: Record<string, MarketTicker>, min: number): Record<string, number> | undefined {
+  if (!(min > 0)) return undefined;
+  const out: Record<string, number> = {};
+  for (const t of tickers) {
+    const m = markets[t]; if (!m) continue;
+    const usdClose = m.closes[m.lastDate], local = m.currency === 'GBp' ? m.lastLocal / 100 : m.lastLocal;
+    const fx = m.currency === 'USD' ? 1 : usdClose / local;
+    if (Number.isFinite(fx) && fx > 0) out[t] = min * fx;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function EtfSignalForm({ uni, date, today, initial, book, existing, feePct, feeMin, markets, sameDay, onSave, onClose }: {
   uni: EtfUniverse; date: string; today: string; initial: EtfSignal; book: PriceBook; existing: boolean; feePct: number; sameDay: number;
+  feeMin: number; markets: Record<string, MarketTicker>;
   onSave: (s: EtfSignal) => void; onClose: () => void;
 }) {
   const current = date === today;
   const fee = current ? feePct / 100 : initial.fee ?? 0;
+  // minimum per order (IBKR Fixed: EUR / GBP 3): today's signal uses the setting, an older one keeps what it was saved with
+  const feeMinUsd = current ? minFeesUsd(uni.tickers, markets, feeMin) : initial.feeMin;
   const px = (s: string) => (current ? etfPrice(book, s, today) : initial.px?.[s] ?? etfPrice(book, s, addDays(date, -1)));
   const closeDay = lastCloseDate(book, uni.tickers[0], current ? today : addDays(date, -1));
   const [cash, setCash] = useState(String(+initial.cash.toFixed(2)));
@@ -111,7 +128,8 @@ function EtfSignalForm({ uni, date, today, initial, book, existing, feePct, same
     alloc: rebOn ? Object.fromEntries(Object.entries(allocRec).filter(([, v]) => v > 0)) : initial.alloc,
     rebalance: rebOn, dca: dcaOn ? (side === 'sell' ? -pctNum : pctNum) : null,
     ...(ordOn ? { orders: orders.map((o) => ({ sym: o.sym, mode: o.mode, pct: n(o.v) })) } : {}),
-    px: Object.fromEntries(uni.tickers.map((t) => [t, px(t)]).filter(([, v]) => Number.isFinite(v as number))), fee
+    px: Object.fromEntries(uni.tickers.map((t) => [t, px(t)]).filter(([, v]) => Number.isFinite(v as number))), fee,
+    ...(feeMinUsd ? { feeMin: feeMinUsd } : {})
   };
   const missing = uni.tickers.filter((t) => !Number.isFinite(px(t)));
   const errors: string[] = [];
@@ -296,8 +314,8 @@ function EtfPortfolioView({ uni, st, book, today, markets, positions, onClose }:
 }
 
 // ---------- page ----------
-export function EtfApp({ which, today, feePct, hideValue, setHideValue, holdingsOpen, setHoldingsOpen }: {
-  which: 'stocks' | 'ai'; today: string; feePct: number; hideValue: boolean; setHideValue: (v: boolean) => void;
+export function EtfApp({ which, today, feePct, feeMin = 0, hideValue, setHideValue, holdingsOpen, setHoldingsOpen }: {
+  which: 'stocks' | 'ai'; today: string; feePct: number; feeMin?: number; hideValue: boolean; setHideValue: (v: boolean) => void;
   holdingsOpen: boolean; setHoldingsOpen: (v: boolean) => void;
 }) {
   const uni = UNIVERSES[which];
@@ -476,7 +494,7 @@ export function EtfApp({ which, today, feePct, hideValue, setHideValue, holdings
         {data && <div className="dim small">Daily closes from Yahoo Finance, updated {new Date(data.updated).toLocaleString()} (after 00:10 UTC); EUR / GBP listings converted to USD at that day's rate.</div>}
       </section>
 
-      {form && <EtfSignalForm uni={uni} date={form.initial.date} today={today} initial={form.initial} book={book} existing={form.existing} feePct={feePct}
+      {form && <EtfSignalForm uni={uni} date={form.initial.date} today={today} initial={form.initial} book={book} existing={form.existing} feePct={feePct} feeMin={feeMin} markets={data?.tickers ?? {}}
         sameDay={signals.filter((x) => x.date === form.initial.date).length} onSave={saveSignal} onClose={() => setForm(null)} />}
       {holdingsOpen && <EtfHoldingsPanel key={holdings?.updatedAt ?? 0} uni={uni} initial={{ ...state, updatedAt: holdings?.updatedAt ?? 0 }} book={book} today={today} flows={flows}
         onFlow={(f) => { if (holdings) archive(`pp.${which}.holdings`, 'replaced', `${uni.title} holdings`, holdings); setHoldings({ ...state, cash: state.cash + f.amount, updatedAt: Date.now() }); setFlows((l) => [...l, f]); }}

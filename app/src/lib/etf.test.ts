@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dcaOrder, etfCostBasis, executeEtf, positionTrades, simulateEtf, type EtfSignal } from './etf';
+import { dcaOrder, etfCostBasis, executeEtf, orderFee, positionTrades, simulateEtf, type EtfSignal } from './etf';
 import type { PriceBook } from './prices';
 
 const px = (s: string) => ({ A: 10, B: 20, CASH: 1 } as Record<string, number>)[s];
@@ -52,5 +52,32 @@ describe('position orders', () => {
     const ex = executeEtf({ id: 'x', date: '2026-01-01', createdAt: 1, cash: 1000, units: {}, alloc: {}, rebalance: false, dca: null, px: {}, orders: [{ sym: 'VWCE', mode: 'buy', pct: 50 }] }, px, ['VWCE']);
     expect(ex.after.units.VWCE).toBeCloseTo(5);
     expect(ex.after.cash).toBeCloseTo(500);
+  });
+});
+
+describe('IBKR Fixed (Europe) fees: 0.05%, minimum per order (22.11.2026)', () => {
+  const px = (s: string) => ({ CASH: 1, VWCE: 100, SGLN: 50 } as Record<string, number>)[s];
+  const min = { VWCE: 3.3, SGLN: 3.9 };
+  it('small orders pay the minimum, large ones 0.05%', () => {
+    expect(orderFee('VWCE', 500, 0.0005, min)).toBeCloseTo(3.3);
+    expect(orderFee('VWCE', 20000, 0.0005, min)).toBeCloseTo(10);
+    expect(orderFee('VWCE', 0, 0.0005, min)).toBe(0);
+    expect(orderFee('VWCE', 500, 0.0005)).toBeCloseTo(0.25);   // old signals: no minimum
+  });
+  it('DCA buy charges the minimum per ticker order', () => {
+    const o = dcaOrder({ cash: 1000, units: {} }, 50, { VWCE: 50, SGLN: 50 }, px, ['VWCE', 'SGLN'], 0.0005, min);
+    expect(o.fee).toBeCloseTo(3.3 + 3.9);
+    expect(o.rows.find((r) => r.sym === 'VWCE')!.units).toBeCloseTo((250 - 3.3) / 100);
+    expect(o.after.cash).toBeCloseTo(500);
+  });
+  it('a position buy smaller than the minimum fee is skipped; a sell pays the minimum', () => {
+    const t = positionTrades({ cash: 2, units: { SGLN: 10 } }, [{ sym: 'VWCE', mode: 'buy', pct: 100 }, { sym: 'SGLN', mode: 'sell', pct: 10 }], px, 0.0005, min);
+    expect(t.rows.find((r) => r.sym === 'SGLN')!.usd).toBeCloseTo(50 - 3.9);
+    expect(t.after.units.SGLN).toBeCloseTo(9);
+  });
+  it('rebalance uses the per-order minimum when the signal stores it', () => {
+    const sig = { id: 'a', date: '2026-01-02', createdAt: 1, cash: 1000, units: {}, alloc: { VWCE: 50, CASH: 50 }, rebalance: true, dca: null, px: { VWCE: 100 }, fee: 0.0005, feeMin: min };
+    const ex = executeEtf(sig, px, ['VWCE', 'SGLN']);
+    expect(ex.plan!.fee).toBeCloseTo(3.3);
   });
 });

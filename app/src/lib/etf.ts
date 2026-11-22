@@ -31,7 +31,18 @@ export interface EtfSignal {
   dca: number | null;                               // > 0 buy x% of cash by the weights, < 0 sell x% of every position, null = no DCA
   orders?: PositionOrder[];                         // single-position orders (after the rebalance, before the DCA)
   px: Record<string, number>; fee?: number;
+  /** broker minimum fee per order in USD for each ticker, stored at save time (IBKR Fixed Europe: €3 / £3 converted);
+   *  missing (signals saved before 22.11.2026) = no minimum */
+  feeMin?: Record<string, number>;
 }
+
+/** Interactive Brokers Pro, Fixed pricing, European stocks/ETFs via SmartRouting (IBKR site, checked 22.11.2026):
+ *  0.05% of the trade value, minimum EUR 3.00 (EUR listings) / GBP 3.00 (LSE GBP listings) per order, no maximum,
+ *  exchange and regulatory fees included. */
+export const IBKR_FIXED_EU = { pct: 0.05, min: 3 } as const;
+/** Fee in USD for one order of `usd` in `sym`: rate × value, at least the stored minimum. */
+export const orderFee = (sym: string, usd: number, rate: number, min?: Record<string, number>) =>
+  usd > 1e-9 ? Math.max(rate * usd, min?.[sym] ?? 0) : 0;
 
 /** One ETF only: bring it to pct% of the portfolio value, sell pct% of the position, or buy with pct% of the cash. */
 export interface PositionOrder { sym: string; mode: 'target' | 'sell' | 'buy'; pct: number; }
@@ -39,7 +50,7 @@ export interface TradeRow { sym: string; side: 'buy' | 'sell'; units: number; us
 export interface TradesResult { rows: TradeRow[]; fee: number; after: EtfState; }
 
 /** Sells run first so their cash can fund the buys; a buy never spends more than the cash there is. */
-export function positionTrades(st: EtfState, orders: PositionOrder[], px: (s: string) => number, fee = 0): TradesResult {
+export function positionTrades(st: EtfState, orders: PositionOrder[], px: (s: string) => number, fee = 0, feeMin?: Record<string, number>): TradesResult {
   const units = { ...st.units }; let cash = st.cash, fees = 0;
   const total = Object.entries(st.units).reduce((t, [k, u]) => t + u * px(k), st.cash);
   const rows: TradeRow[] = [];
@@ -50,14 +61,15 @@ export function positionTrades(st: EtfState, orders: PositionOrder[], px: (s: st
     return { o, p, usd, note };
   });
   for (const x of plan.filter((x) => x.usd < -1e-9)) {
-    const n = Math.min(-x.usd / x.p, units[x.o.sym] ?? 0), gross = n * x.p;
-    units[x.o.sym] = (units[x.o.sym] ?? 0) - n; cash += gross * (1 - fee); fees += gross * fee;
-    rows.push({ sym: x.o.sym, side: 'sell', units: n, usd: gross * (1 - fee), price: x.p, note: x.note });
+    const n = Math.min(-x.usd / x.p, units[x.o.sym] ?? 0), gross = n * x.p, f = orderFee(x.o.sym, gross, fee, feeMin);
+    units[x.o.sym] = (units[x.o.sym] ?? 0) - n; cash += gross - f; fees += f;
+    rows.push({ sym: x.o.sym, side: 'sell', units: n, usd: gross - f, price: x.p, note: x.note });
   }
   for (const x of plan.filter((x) => x.usd > 1e-9)) {
-    const spend = Math.min(x.usd, Math.max(cash, 0)); if (spend <= 1e-9) continue;
-    const n = spend * (1 - fee) / x.p;
-    units[x.o.sym] = (units[x.o.sym] ?? 0) + n; cash -= spend; fees += spend * fee;
+    const spend = Math.min(x.usd, Math.max(cash, 0)), f = orderFee(x.o.sym, spend, fee, feeMin);
+    if (spend <= 1e-9 || f >= spend) continue;   // no cash, or the order would only pay the minimum fee
+    const n = (spend - f) / x.p;
+    units[x.o.sym] = (units[x.o.sym] ?? 0) + n; cash -= spend; fees += f;
     rows.push({ sym: x.o.sym, side: 'buy', units: n, usd: spend, price: x.p, note: x.note + (spend < x.usd - 1e-6 ? ' (limited by cash)' : '') });
   }
   return { rows, fee: fees, after: { cash, units } };
@@ -66,32 +78,41 @@ export function positionTrades(st: EtfState, orders: PositionOrder[], px: (s: st
 export interface DcaOrder { side: 'buy' | 'sell'; pct: number; rows: { sym: string; usd: number; units: number; price: number }[]; fee: number; after: EtfState; }
 
 /** DCA: buy pct% of the cash split by the non-cash target weights (equal weights if none), or sell pct% of every position. */
-export function dcaOrder(st: EtfState, pct: number, alloc: Record<string, number>, px: (s: string) => number, tickers: string[], fee = 0): DcaOrder {
+export function dcaOrder(st: EtfState, pct: number, alloc: Record<string, number>, px: (s: string) => number, tickers: string[], fee = 0, feeMin?: Record<string, number>): DcaOrder {
   const p = Math.min(Math.abs(pct), 100) / 100;
   const units = { ...st.units };
   if (pct > 0) {
     const w = Object.entries(alloc).filter(([k, v]) => k !== CASH && v > 0);
     const weights = w.length ? w : tickers.map((t) => [t, 1] as [string, number]);
     const sum = weights.reduce((t, [, v]) => t + v, 0), spend = p * Math.max(st.cash, 0);
-    const rows = weights.map(([sym, v]) => { const usd = spend * v / sum, price = px(sym); return { sym, usd, units: usd * (1 - fee) / price, price }; });
+    let fees = 0;
+    const rows = weights.map(([sym, v]) => {
+      const usd = spend * v / sum, price = px(sym), f = Math.min(orderFee(sym, usd, fee, feeMin), usd);
+      fees += f; return { sym, usd, units: (usd - f) / price, price };
+    });
     for (const r of rows) units[r.sym] = (units[r.sym] ?? 0) + r.units;
-    return { side: 'buy', pct: p, rows, fee: spend * fee, after: { cash: st.cash - spend, units } };
+    return { side: 'buy', pct: p, rows, fee: fees, after: { cash: st.cash - spend, units } };
   }
-  const rows = Object.entries(st.units).filter(([, u]) => u > 0).map(([sym, u]) => { const price = px(sym), n = u * p; return { sym, usd: n * price * (1 - fee), units: n, price }; });
+  let fees = 0;
+  const rows = Object.entries(st.units).filter(([, u]) => u > 0).map(([sym, u]) => {
+    const price = px(sym), n = u * p, f = Math.min(orderFee(sym, n * price, fee, feeMin), n * price);
+    fees += f; return { sym, usd: n * price - f, units: n, price };
+  });
   for (const r of rows) units[r.sym] -= r.units;
   const gross = rows.reduce((t, r) => t + r.units * r.price, 0);
-  return { side: 'sell', pct: p, rows, fee: gross * fee, after: { cash: st.cash + gross * (1 - fee), units } };
+  return { side: 'sell', pct: p, rows, fee: fees, after: { cash: st.cash + gross - fees, units } };
 }
 
 export interface EtfExec { signal: EtfSignal; plan: RebalancePlan | null; trades: TradesResult | null; dca: DcaOrder | null; after: EtfState; }
 export function executeEtf(sig: EtfSignal, px: (s: string) => number, tickers: string[]): EtfExec {
   const fee = sig.fee ?? 0;
   let st: EtfState = { cash: sig.cash, units: { ...sig.units } };
-  const plan = sig.rebalance ? rebalance({ alloc: sig.alloc, cash: st.cash, units: st.units }, px, fee) : null;
+  const mins = sig.feeMin;
+  const plan = sig.rebalance ? rebalance({ alloc: sig.alloc, cash: st.cash, units: st.units }, px, fee, fee, mins ? (s, usd) => orderFee(s, usd, fee, mins) : undefined) : null;
   if (plan) st = plan.after;
-  const trades = sig.orders?.length ? positionTrades(st, sig.orders, px, fee) : null;
+  const trades = sig.orders?.length ? positionTrades(st, sig.orders, px, fee, mins) : null;
   if (trades) st = trades.after;
-  const dca = sig.dca ? dcaOrder(st, sig.dca, sig.alloc, px, tickers, fee) : null;
+  const dca = sig.dca ? dcaOrder(st, sig.dca, sig.alloc, px, tickers, fee, mins) : null;
   if (dca) st = dca.after;
   return { signal: sig, plan, trades, dca, after: st };
 }
@@ -172,8 +193,10 @@ export function etfCostBasis(signals: EtfSignal[], book: PriceBook, tickers: str
     const ex = executeEtf(sig, pe, tickers);
     for (const s of new Set([...Object.keys(sig.units), ...Object.keys(ex.after.units)])) {
       const d = (ex.after.units[s] ?? 0) - (sig.units[s] ?? 0);
-      if (d > 1e-12) add(s, d, d * pe(s) / (1 - fee || 1));
-      else if (d < -1e-12) remove(s, -d, -d * pe(s) * (1 - fee), year);
+      // cost includes the fee, sale proceeds are after the fee (minimum per order when stored)
+      const v = Math.abs(d) * pe(s), f = sig.feeMin ? orderFee(s, v, fee, sig.feeMin) : v * fee;
+      if (d > 1e-12) add(s, d, sig.feeMin ? v + f : d * pe(s) / (1 - fee || 1));
+      else if (d < -1e-12) remove(s, -d, sig.feeMin ? v - f : -d * pe(s) * (1 - fee), year);
     }
   }
   return pos;

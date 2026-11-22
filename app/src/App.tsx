@@ -26,6 +26,7 @@ import { NetWorthPanel, CATEGORIES, type NetWorth, type NetWorthSnapshot } from 
 import { CornerPanel, type CornerTab } from './components/CornerPanel';
 import { NotesTab, type Note } from './components/Notes';
 import { EtfApp } from './EtfApp';
+import { IBKR_FIXED_EU } from './lib/etf';
 import { PortfolioView } from './components/PortfolioView';
 import { registerStats } from './lib/platform';
 import { dashboardStats } from './lib/dashboardStats';
@@ -78,10 +79,13 @@ export default function App() {
   const [theme, setTheme] = usePersisted<'dark' | 'light'>('theme', 'dark');
   useEffect(() => { applyTheme(theme); }, [theme]);
   const [portfolioOpen, setPortfolioOpen] = useState(false);
-  const [feePct, setFeePct] = usePersisted<number>('settings.feePct', 0);   // stocks (and crypto signals saved before 22.11.2026)
+  // 'settings.feePct' (one fee for everything) was replaced on 22.11.2026; signals keep the fee they were saved with
   // crypto fees (22.11.2026): Hyperliquid base tier, market (taker) orders by default
   const [feeSpotPct, setFeeSpotPct] = usePersisted<number>('settings.feeSpotPct', HL_FEES.spotTaker);
   const [feePerpPct, setFeePerpPct] = usePersisted<number>('settings.feePerpPct', HL_FEES.perpTaker);
+  // stocks fees (22.11.2026): Interactive Brokers Pro Fixed, Europe — 0.05% of the trade value, min EUR/GBP 3 per order
+  const [stockFeePct, setStockFeePct] = usePersisted<number>('settings.stockFeePct', IBKR_FIXED_EU.pct);
+  const [stockFeeMin, setStockFeeMin] = usePersisted<number>('settings.stockFeeMin', IBKR_FIXED_EU.min);
   const [hideValue, setHideValue] = usePersisted<boolean>('privacy.hideValue', false);   // blur the Portfolio value tile   // optional trading fee, % of each trade
   const [flows, setFlows] = usePersisted<Flow[]>('flows', []);
   // one switch for the chart line, PnL and %: Total / SDCA / RSPS / Perps (19.11.2026)
@@ -295,7 +299,7 @@ export default function App() {
         }} />
 
       <PriceChart sym={chartSym} setSym={setChartSym} book={book} today={today} />
-      </> : <EtfApp key={tab} which={tab} today={today} feePct={feePct} hideValue={hideValue} setHideValue={setHideValue} holdingsOpen={holdingsOpen} setHoldingsOpen={setHoldingsOpen} />}
+      </> : <EtfApp key={tab} which={tab} today={today} feePct={stockFeePct} feeMin={stockFeeMin} hideValue={hideValue} setHideValue={setHideValue} holdingsOpen={holdingsOpen} setHoldingsOpen={setHoldingsOpen} />}
 
       <Footer />
 
@@ -308,7 +312,7 @@ export default function App() {
 
       {portfolioOpen && <PortfolioView today={today} book={book} positions={positions} shorts={shortInfo} onClose={() => setPortfolioOpen(false)}
         sdca={holdings?.sdca ?? sim?.sdca ?? { cash: 0, btc: 0 }} rsps={holdings?.rsps ?? sim?.rsps ?? { cash: 0, units: {} }} />}
-      {settingsOpen && <SettingsPanel theme={theme} setTheme={setTheme} feePct={feePct} setFeePct={setFeePct} feeSpotPct={feeSpotPct} setFeeSpotPct={setFeeSpotPct} feePerpPct={feePerpPct} setFeePerpPct={setFeePerpPct} reminders={reminders} saveReminder={saveReminder} deleteReminder={deleteReminder} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsPanel theme={theme} setTheme={setTheme} feeSpotPct={feeSpotPct} setFeeSpotPct={setFeeSpotPct} feePerpPct={feePerpPct} setFeePerpPct={setFeePerpPct} stockFeePct={stockFeePct} setStockFeePct={setStockFeePct} stockFeeMin={stockFeeMin} setStockFeeMin={setStockFeeMin} reminders={reminders} saveReminder={saveReminder} deleteReminder={deleteReminder} onClose={() => setSettingsOpen(false)} />}
       {saveFailed && <div className="update-banner"><div><b>Could not save</b><div className="dim small">The browser’s storage is full or blocked. Export a backup now.</div></div>
         <button className="btn gold small" onClick={() => { setSaveFailed(false); setSettingsOpen(true); }}>Backup</button></div>}
 

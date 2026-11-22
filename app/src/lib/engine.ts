@@ -182,7 +182,8 @@ export const HL_FEES = { perpTaker: 0.045, perpMaker: 0.015, spotTaker: 0.07, sp
  *  feePerp = the rate for coins that are or become perps (shorts, longs above 1×); spot coins pay `fee`.
  *  A negative target is a short: negative units, and cash = CASH% + the collateral and the sale proceeds of the shorts
  *  (2 × their size), so cash + Σ units × price = the part's value. Long-only allocations give the same result as before. */
-export function rebalance(inp: RspsInput, px: (sym: string) => number, fee = 0, feePerp = fee): RebalancePlan {
+/** feeOf (optional): the fee in USD for trading `usd` of `sym` (e.g. a broker minimum per order); overrides the rates. */
+export function rebalance(inp: RspsInput, px: (sym: string) => number, fee = 0, feePerp = fee, feeOf?: (sym: string, usd: number) => number): RebalancePlan {
   const syms = [...new Set([CASH, ...Object.keys(inp.units), ...Object.keys(inp.alloc)])];
   const missing = syms.filter((s) => !Number.isFinite(px(s)));
   const cur = (s: string) => (s === CASH ? inp.cash : inp.units[s] ?? 0);
@@ -202,7 +203,7 @@ export function rebalance(inp: RspsInput, px: (sym: string) => number, fee = 0, 
       feeRate: sym === CASH ? 0 : isPerp(curUnits, levOf(inp.heldLev, sym)) || isPerp(tgtUsd, levOf(inp.lev, sym)) ? feePerp : fee
     };
   });
-  const feeUsd = rows.reduce((t, r) => t + (r.sym === CASH ? 0 : Math.abs(r.deltaUsd) * r.feeRate), 0);
+  const feeUsd = rows.reduce((t, r) => t + (r.sym === CASH ? 0 : feeOf ? (Math.abs(r.deltaUsd) > 1e-6 ? feeOf(r.sym, Math.abs(r.deltaUsd)) : 0) : Math.abs(r.deltaUsd) * r.feeRate), 0);
   const k = total > 0 && Number.isFinite(feeUsd) ? (total - feeUsd) / total : 1;
   const units: Record<string, number> = {};
   for (const r of rows) if (r.sym !== CASH && Math.abs(r.tgtUsd) > EPS) units[r.sym] = r.tgtUsd * k / r.price;
