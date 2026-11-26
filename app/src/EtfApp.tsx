@@ -21,6 +21,8 @@ import { ask } from './lib/platform';
 // ---------- market data (markets.json, written daily by the GitHub Action) ----------
 export interface MarketTicker { name: string; yahoo: string; exchange: string; currency: string; lastDate: string; lastLocal: number; closes: Record<string, number>; }
 const REFRESH_MS = 30 * 60_000;
+// Where the daily snapshot is read from: next to the app (GitHub Pages) or, for other hosts, from the repo (VITE_DATA_BASE).
+const DATA_BASE: string = import.meta.env.VITE_DATA_BASE || './';
 export function useMarkets() {
   const [data, setData] = useState<{ updated: string; tickers: Record<string, MarketTicker> } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +30,7 @@ export function useMarkets() {
     let alive = true;
     const load = async () => {
       try {
-        const res = await fetch(`./markets.json?t=${Math.floor(Date.now() / REFRESH_MS)}`, { cache: 'no-cache' });
+        const res = await fetch(`${DATA_BASE}markets.json?t=${Math.floor(Date.now() / REFRESH_MS)}`, { cache: 'no-cache' });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const j = await res.json();
         if (alive) { setData(j); setError(null); }

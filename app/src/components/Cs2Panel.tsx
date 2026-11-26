@@ -10,6 +10,8 @@ export interface Cs2Snap {
 interface Cs2File { updated: string; source: string; latest: Cs2Snap; history: Cs2Snap[]; }
 
 const REFRESH_MS = 30 * 60_000;
+// Where the daily snapshot is read from: next to the app (GitHub Pages) or, for other hosts, from the repo (VITE_DATA_BASE).
+const DATA_BASE: string = import.meta.env.VITE_DATA_BASE || './';
 
 function useCs2() {
   const [data, setData] = useState<Cs2File | null>(null);
@@ -18,7 +20,7 @@ function useCs2() {
     let alive = true;
     const load = async () => {
       try {
-        const res = await fetch(`./cs2.json?t=${Math.floor(Date.now() / REFRESH_MS)}`, { cache: 'no-cache' });
+        const res = await fetch(`${DATA_BASE}cs2.json?t=${Math.floor(Date.now() / REFRESH_MS)}`, { cache: 'no-cache' });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const j = await res.json() as Cs2File;
         if (alive) { setData(j); setError(null); }
