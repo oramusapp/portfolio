@@ -25,6 +25,9 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
+/* phone: no sideways drift of the whole page (wide tables scroll inside their own box) */
+html, body { overflow-x: hidden; overscroll-behavior-x: none; max-width: 100%; }
+#root { overflow-x: clip; }
 body { background: var(--bg); color: var(--text); font: 15px/1.45 var(--sans); min-height: 100vh; font-variant-numeric: tabular-nums; }
 #root { position: relative; z-index: 1; }
 .matrix-rain { position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: var(--rain-opacity); }
@@ -85,7 +88,7 @@ input::placeholder { color: var(--dim); opacity: .7; }
 .tip-date { font-family: var(--mono); color: var(--dim); margin-bottom: 4px; }
 .tip-row { display: flex; align-items: center; gap: 6px; } .tip-row b { margin-left: auto; font-weight: 600; }
 .tip-row i { width: 8px; height: 8px; border-radius: 50%; }
-.price-now { display: flex; align-items: center; gap: 12px; } .price-now b { font-size: 20px; font-weight: 600; }
+.price-now { display: flex; align-items: center; gap: 6px 12px; flex-wrap: wrap; min-width: 0; max-width: 100%; } .price-now b { font-size: 20px; font-weight: 600; }
 
 /* buttons */
 .btn { display: inline-flex; align-items: center; gap: 8px; border-radius: 11px; padding: 11px 20px; font: inherit; font-size: 16px; font-weight: 500; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--text); }
